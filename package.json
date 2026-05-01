@@ -4,8 +4,8 @@
   "description": "Holland Fast Food — Professional Telegram Bot",
   "main": "bot.js",
   "scripts": {
-    "start": "node miniapp-server.js",
-    "dev": "nodemon bot.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "keywords": [],
   "author": "Holland",
@@ -14,8 +14,6 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mongodb": "^7.2.0",
-    "mongoose": "^9.4.1",
     "node-telegram-bot-api": "^0.67.0",
     "sqlite3": "^6.0.1"
   },

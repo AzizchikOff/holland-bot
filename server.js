@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const Database = require("better-sqlite3");
+const sqlite3 = require("sqlite3").verbose();
 const TelegramBot = require("node-telegram-bot-api");
 const path = require("path");
 
@@ -14,8 +14,9 @@ app.use(cors());
 app.use(express.json());
 
 // ── SQLite ─────────────────────────────────
-const db = new Database(path.join(__dirname, "holland.db"));
-db.exec(`
+const db = new sqlite3.Database(path.join(__dirname, "holland.db"));
+
+db.run(`
   CREATE TABLE IF NOT EXISTS orders (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL,
@@ -29,12 +30,29 @@ db.exec(`
     total      INTEGER NOT NULL,
     status     TEXT NOT NULL DEFAULT 'new',
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-  );
+  )
 `);
 
 // ── Helpers ────────────────────────────────
 function fmt(n) {
   return new Intl.NumberFormat("uz-UZ").format(n);
+}
+function dbRun(sql, params = []) {
+  return new Promise((res, rej) =>
+    db.run(sql, params, function (e) {
+      e ? rej(e) : res(this);
+    }),
+  );
+}
+function dbGet(sql, params = []) {
+  return new Promise((res, rej) =>
+    db.get(sql, params, (e, row) => (e ? rej(e) : res(row))),
+  );
+}
+function dbAll(sql, params = []) {
+  return new Promise((res, rej) =>
+    db.all(sql, params, (e, rows) => (e ? rej(e) : res(rows))),
+  );
 }
 
 const STATUS = {
@@ -69,14 +87,12 @@ app.post("/api/orders", async (req, res) => {
     if (!name || !phone || !address || !items?.length)
       return res.json({ success: false, error: "Ma'lumotlar to'liq emas" });
 
-    const r = db
-      .prepare(
-        `
+    const r = await dbRun(
+      `
       INSERT INTO orders (user_id,name,phone,address,note,gps_lat,gps_lng,items,total)
       VALUES (?,?,?,?,?,?,?,?,?)
     `,
-      )
-      .run(
+      [
         userId,
         name,
         phone,
@@ -86,14 +102,13 @@ app.post("/api/orders", async (req, res) => {
         gps?.lng || null,
         JSON.stringify(items),
         total,
-      );
+      ],
+    );
 
-    const order = db
-      .prepare("SELECT * FROM orders WHERE id=?")
-      .get(r.lastInsertRowid);
+    const order = await dbGet("SELECT * FROM orders WHERE id=?", [r.lastID]);
     const pItems = JSON.parse(order.items);
 
-    // Admin xabar
+    // Adminga xabar
     if (ADMIN_ID) {
       let txt = `🛎 *Yangi buyurtma #${order.id}*\n\n`;
       txt += `👤 ${order.name}\n`;
@@ -120,40 +135,40 @@ app.post("/api/orders", async (req, res) => {
 });
 
 // Foydalanuvchi buyurtmalari
-app.get("/api/orders/user/:uid", (req, res) => {
+app.get("/api/orders/user/:uid", async (req, res) => {
   try {
-    const rows = db
-      .prepare("SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 30")
-      .all(req.params.uid);
+    const rows = await dbAll(
+      "SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 30",
+      [req.params.uid],
+    );
     res.json(rows);
   } catch {
     res.json([]);
   }
 });
 
-// Barcha buyurtmalar (admin)
-app.get("/api/orders", (req, res) => {
+// Barcha buyurtmalar
+app.get("/api/orders", async (req, res) => {
   try {
-    res.json(
-      db.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 100").all(),
-    );
+    res.json(await dbAll("SELECT * FROM orders ORDER BY id DESC LIMIT 100"));
   } catch {
     res.json([]);
   }
 });
 
-// Health
+// Health check
 app.get("/", (req, res) => res.json({ ok: true, service: "Holland API ✅" }));
 
-// ── Bot callback (admin holat yangilash) ───
+// ── Bot callback ───────────────────────────
 bot.on("callback_query", async (q) => {
   if (!q.data.startsWith("s_")) return;
   if (q.message.chat.id !== ADMIN_ID) return;
 
   const [, idStr, status] = q.data.split("_");
   const id = Number(idStr);
-  db.prepare("UPDATE orders SET status=? WHERE id=?").run(status, id);
-  const order = db.prepare("SELECT * FROM orders WHERE id=?").get(id);
+
+  await dbRun("UPDATE orders SET status=? WHERE id=?", [status, id]);
+  const order = await dbGet("SELECT * FROM orders WHERE id=?", [id]);
   if (!order) return;
 
   await bot.answerCallbackQuery(q.id, { text: STATUS[status] || status });
@@ -165,7 +180,6 @@ bot.on("callback_query", async (q) => {
     parse_mode: "Markdown",
   });
 
-  // Mijozga xabar
   try {
     await bot.sendMessage(
       order.user_id,
