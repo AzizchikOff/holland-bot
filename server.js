@@ -17,6 +17,14 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB ulandi"))
   .catch(e => console.error("❌ MongoDB:", e.message));
 
+const UserSchema = new mongoose.Schema({
+  userId:    { type: Number, unique: true },
+  firstName: String,
+  username:  String,
+  joinedAt:  { type: Date, default: Date.now },
+});
+const User = mongoose.model("User", UserSchema);
+
 const OrderSchema = new mongoose.Schema({
   userId:  Number,
   name:    String,
@@ -29,7 +37,6 @@ const OrderSchema = new mongoose.Schema({
   total:   Number,
   status:  { type: String, default: "new" },
 }, { timestamps: true });
-
 const Order = mongoose.model("Order", OrderSchema);
 
 // ── Helpers ────────────────────────────────
@@ -43,7 +50,7 @@ const STATUS = {
   cancelled: "❌ Bekor qilindi",
 };
 
-const MENU_URL = "https://holland-namangan.netlify.app/app/";
+const MINI_APP_URL = "https://holland-namangan.netlify.app/app/";
 
 function adminKb(id) {
   return { inline_keyboard: [
@@ -54,10 +61,10 @@ function adminKb(id) {
   ]};
 }
 
-function mainMenuKb() {
+function mainKb() {
   return {
     keyboard: [
-      [{ text: "🍔 Buyurtma berish", web_app: { url: MENU_URL } }],
+      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
       [{ text: "📦 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
       [{ text: "📞 Bog'lanish" }],
     ],
@@ -66,20 +73,84 @@ function mainMenuKb() {
   };
 }
 
+// ── Foydalanuvchini saqlash ─────────────────
+async function saveUser(msg) {
+  try {
+    await User.findOneAndUpdate(
+      { userId: msg.chat.id },
+      { userId: msg.chat.id, firstName: msg.chat.first_name, username: msg.chat.username },
+      { upsert: true }
+    );
+  } catch {}
+}
+
 // ══════════════════════════════════════════
 //  BOT — /start
 // ══════════════════════════════════════════
 bot.onText(/\/start/, async (msg) => {
   const id   = msg.chat.id;
   const name = msg.chat.first_name || "Mehmon";
+  await saveUser(msg);
 
-  await bot.sendMessage(id,
-    `🍔 *Holland Fast Food*ga xush kelibsiz, *${name}*\\!\n\n` +
-    `Mazali fast food — 10–15 daqiqada yetkazib beramiz\\.\n` +
-    `✅ Halol  •  🔥 Issiq  •  ⚡ Tez\n\n` +
-    `Pastdagi *🍔 Buyurtma berish* tugmasini bosing\\!`,
-    { parse_mode: "MarkdownV2", reply_markup: mainMenuKb() }
-  );
+  const userCount  = await User.countDocuments();
+  const orderCount = await Order.countDocuments({ userId: id });
+  const lastOrder  = await Order.findOne({ userId: id }).sort({ createdAt: -1 });
+
+  // Xush kelibsiz xabari
+  let text = `🍔 *Holland Fast Food*\n\n`;
+  text += `Assalomu alaykum, *${name}*! Xush kelibsiz 👋\n\n`;
+  text += `┌ ⚡ Yetkazib berish: *10–15 daqiqa*\n`;
+  text += `├ ✅ Mahsulot: *100% Halol*\n`;
+  text += `├ 🔥 Taom: *Har doim issiq*\n`;
+  text += `└ 👥 Mijozlar: *${userCount} ta*\n\n`;
+
+  if (orderCount > 0 && lastOrder) {
+    text += `📦 Sizning so'nggi buyurtmangiz:\n`;
+    text += `*#${lastOrder._id.toString().slice(-6).toUpperCase()}* — ${STATUS[lastOrder.status]}\n`;
+    text += `💰 ${fmt(lastOrder.total)} so'm\n\n`;
+  }
+
+  text += `🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇`;
+
+  await bot.sendMessage(id, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } },
+      ],[
+        { text: "📦 Buyurtmalarim", callback_data: "my_orders" },
+        { text: "📞 Bog'lanish",    callback_data: "contact"   },
+      ]],
+    },
+  });
+
+  // Pastki menyu ham ko'rinsin
+  await bot.sendMessage(id, "Yoki pastdagi tugmalardan foydalaning 👇", {
+    reply_markup: mainKb(),
+  });
+});
+
+// ══════════════════════════════════════════
+//  BOT — /admin (faqat admin uchun)
+// ══════════════════════════════════════════
+bot.onText(/\/admin/, async (msg) => {
+  if (msg.chat.id !== ADMIN_ID) return;
+  const userCount  = await User.countDocuments();
+  const orderCount = await Order.countDocuments();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayOrders = await Order.countDocuments({ createdAt: { $gte: todayStart } });
+  const todaySum    = await Order.aggregate([
+    { $match: { createdAt: { $gte: todayStart }, status: { $ne: "cancelled" } } },
+    { $group: { _id: null, total: { $sum: "$total" } } }
+  ]);
+
+  let text = `📊 *Holland Admin Panel*\n\n`;
+  text += `👥 Jami foydalanuvchilar: *${userCount}*\n`;
+  text += `📦 Jami buyurtmalar: *${orderCount}*\n`;
+  text += `📅 Bugungi buyurtmalar: *${todayOrders}*\n`;
+  text += `💰 Bugungi tushum: *${fmt(todaySum[0]?.total || 0)} so'm*\n`;
+
+  await bot.sendMessage(ADMIN_ID, text, { parse_mode: "Markdown" });
 });
 
 // ══════════════════════════════════════════
@@ -88,6 +159,7 @@ bot.onText(/\/start/, async (msg) => {
 bot.on("message", async (msg) => {
   if (msg.text?.startsWith("/")) return;
   if (msg.web_app_data) return;
+  await saveUser(msg);
 
   const id   = msg.chat.id;
   const text = msg.text || "";
@@ -95,16 +167,20 @@ bot.on("message", async (msg) => {
   if (text === "📦 Buyurtmalarim") {
     const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
     if (!orders.length) {
-      return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainMenuKb() });
+      return bot.sendMessage(id,
+        "📭 Hali buyurtma berilmagan.\n\n🍔 Birinchi buyurtmangizni bering!",
+        { reply_markup: { inline_keyboard: [[
+          { text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }
+        ]]} }
+      );
     }
     let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => {
       txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
-      txt += `Holati: ${STATUS[o.status] || o.status}\n`;
-      txt += `Jami: ${fmt(o.total)} so'm\n`;
-      txt += `Sana: ${o.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
+      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
+      txt += `   ${o.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
     });
-    return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainMenuKb() });
+    return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
   }
 
   if (text === "ℹ️ Biz haqimizda") {
@@ -115,64 +191,86 @@ bot.on("message", async (msg) => {
       `📞 +998 90 699 95 95\n\n` +
       `Har bir buyurtma yangi tayyorlanadi.\n` +
       `✅ 100% Halol mahsulot`,
-      { parse_mode: "Markdown", reply_markup: mainMenuKb() }
+      { parse_mode: "Markdown", reply_markup: mainKb() }
     );
   }
 
   if (text === "📞 Bog'lanish") {
     return bot.sendMessage(id,
       `📞 *Bog'lanish:*\n\n` +
-      `Telefon: +998 90 699 95 95\n` +
-      `Telegram: @Holland\\_fries\n` +
-      `Sayt: holland\\-namangan\\.netlify\\.app`,
-      { parse_mode: "MarkdownV2", reply_markup: mainMenuKb() }
+      `📱 Telefon: +998 90 699 95 95\n` +
+      `💬 Telegram: @Holland_fries\n` +
+      `🌐 Sayt: holland-namangan.netlify.app`,
+      { parse_mode: "Markdown", reply_markup: mainKb() }
     );
   }
 
-  // Tushunilmagan xabar
   return bot.sendMessage(id,
     "Buyurtma berish uchun quyidagi tugmani bosing 👇",
-    { reply_markup: mainMenuKb() }
+    { reply_markup: { inline_keyboard: [[
+      { text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }
+    ]]} }
   );
 });
 
 // ══════════════════════════════════════════
-//  BOT — Admin callback (holat yangilash)
+//  BOT — Callback queries
 // ══════════════════════════════════════════
 bot.on("callback_query", async (q) => {
-  if (!q.data.startsWith("s_")) return;
-  if (q.message.chat.id !== ADMIN_ID) return;
+  const id   = q.message.chat.id;
+  const data = q.data;
 
-  const parts  = q.data.split("_");
-  const id     = parts[1];
-  const status = parts[2];
+  await bot.answerCallbackQuery(q.id);
 
-  const order = await Order.findByIdAndUpdate(id, { status }, { new: true });
-  if (!order) return;
+  // Admin holat yangilash
+  if (data.startsWith("s_") && id === ADMIN_ID) {
+    const parts  = data.split("_");
+    const oid    = parts[1];
+    const status = parts[2];
+    const order  = await Order.findByIdAndUpdate(oid, { status }, { new: true });
+    if (!order) return;
 
-  await bot.answerCallbackQuery(q.id, { text: STATUS[status] || status });
-  await bot.editMessageReplyMarkup(adminKb(id), {
-    chat_id: ADMIN_ID, message_id: q.message.message_id,
-  });
-  await bot.sendMessage(ADMIN_ID,
-    `✅ *#${id.slice(-6).toUpperCase()}* → *${STATUS[status]}*`,
-    { parse_mode: "Markdown" }
-  );
-
-  // Mijozga xabar
-  try {
-    await bot.sendMessage(order.userId,
-      `🔔 *Buyurtma holati yangilandi*\n\n${STATUS[status]}\n\nRahmat! 🙏`,
+    await bot.editMessageReplyMarkup(adminKb(oid), {
+      chat_id: ADMIN_ID, message_id: q.message.message_id,
+    });
+    await bot.sendMessage(ADMIN_ID,
+      `✅ *#${oid.slice(-6).toUpperCase()}* → *${STATUS[status]}*`,
       { parse_mode: "Markdown" }
     );
-  } catch {}
+    try {
+      await bot.sendMessage(order.userId,
+        `🔔 *Holland Fast Food*\n\nBuyurtma *#${oid.slice(-6).toUpperCase()}* holati:\n${STATUS[status]}\n\nRahmat! 🙏`,
+        { parse_mode: "Markdown" }
+      );
+    } catch {}
+    return;
+  }
+
+  // My orders inline
+  if (data === "my_orders") {
+    const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
+    if (!orders.length) {
+      return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainKb() });
+    }
+    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
+    orders.forEach(o => {
+      txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
+      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`;
+    });
+    return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
+  }
+
+  if (data === "contact") {
+    return bot.sendMessage(id,
+      `📞 *Bog'lanish:*\n\n📱 +998 90 699 95 95\n💬 @Holland_fries`,
+      { parse_mode: "Markdown", reply_markup: mainKb() }
+    );
+  }
 });
 
 // ══════════════════════════════════════════
 //  API ROUTES
 // ══════════════════════════════════════════
-
-// Buyurtma yaratish (Mini App dan)
 app.post("/api/orders", async (req, res) => {
   try {
     const { userId, name, phone, address, note, gps, items, total } = req.body;
@@ -184,10 +282,9 @@ app.post("/api/orders", async (req, res) => {
       note:   note || "",
       gpsLat: gps?.lat || null,
       gpsLng: gps?.lng || null,
-      items,  total,
+      items, total,
     });
 
-    // Adminga xabar
     if (ADMIN_ID) {
       let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
       txt += `👤 ${order.name}\n`;
@@ -198,13 +295,11 @@ app.post("/api/orders", async (req, res) => {
       txt += `\n📦 *Tarkibi:*\n`;
       order.items.forEach(i => { txt += `• ${i.name} × ${i.qty} = ${fmt(i.price * i.qty)} so'm\n`; });
       txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
-
       await bot.sendMessage(ADMIN_ID, txt, {
         parse_mode: "Markdown",
         reply_markup: adminKb(order._id.toString()),
       });
     }
-
     res.json({ success: true, orderId: order._id });
   } catch (e) {
     console.error(e);
@@ -212,7 +307,6 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-// Foydalanuvchi buyurtmalari
 app.get("/api/orders/user/:uid", async (req, res) => {
   try {
     const orders = await Order.find({ userId: Number(req.params.uid) })
@@ -221,16 +315,20 @@ app.get("/api/orders/user/:uid", async (req, res) => {
   } catch { res.json([]); }
 });
 
-// Barcha buyurtmalar (admin)
 app.get("/api/orders", async (req, res) => {
   try {
-    const orders = await Order.find().sort({ createdAt: -1 }).limit(100);
-    res.json(orders);
+    res.json(await Order.find().sort({ createdAt: -1 }).limit(100));
   } catch { res.json([]); }
 });
 
-// Health check
+app.get("/api/stats", async (req, res) => {
+  try {
+    const users  = await User.countDocuments();
+    const orders = await Order.countDocuments();
+    res.json({ users, orders });
+  } catch { res.json({ users: 0, orders: 0 }); }
+});
+
 app.get("/", (req, res) => res.json({ ok: true, service: "Holland API ✅" }));
 
-// ── Server ─────────────────────────────────
 app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));
