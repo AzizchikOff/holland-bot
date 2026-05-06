@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Holland Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--red:#E8342A;--dark:#111827;--mid:#6b7280;--soft:#9ca3af;--light:#f9fafb;--white:#fff;--border:#e5e7eb;--green:#10b981;--yellow:#f59e0b;--blue:#3b82f6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:var(--dark);min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;width:220px;height:100vh;background:var(--dark);padding:24px 16px;display:flex;flex-direction:column;gap:4px;z-index:100}
+.sidebar-logo{font-size:18px;font-weight:800;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;color:rgba(255,255,255,.6);font-size:14px;font-weight:500;transition:all .15s}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-item.active{background:var(--red);color:#fff}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.main{margin-left:220px;padding:24px;min-height:100vh}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.topbar-title{font-size:22px;font-weight:800}
+.live-badge{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--white);border:1px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;color:var(--mid)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:var(--white);border-radius:14px;padding:18px;border:1px solid var(--border)}
+.stat-label{font-size:12px;font-weight:600;color:var(--mid);margin-bottom:8px}
+.stat-num{font-size:26px;font-weight:800;color:var(--dark)}
+.stat-sub{font-size:12px;color:var(--soft);margin-top:4px}
+.stat-icon{font-size:20px;margin-bottom:8px}
+
+/* CHART */
+.chart-card{background:var(--white);border-radius:14px;padding:20px;border:1px solid var(--border);margin-bottom:24px}
+.chart-title{font-size:15px;font-weight:700;margin-bottom:16px}
+.bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px}
+.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.bar{width:100%;background:var(--red);border-radius:6px 6px 0 0;transition:height .5s ease;min-height:2px;opacity:.85}
+.bar:hover{opacity:1}
+.bar-label{font-size:10px;color:var(--soft);font-weight:500}
+.bar-val{font-size:10px;color:var(--mid);font-weight:600}
+
+/* ORDERS */
+.orders-card{background:var(--white);border-radius:14px;border:1px solid var(--border);overflow:hidden}
+.orders-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.orders-title{font-size:15px;font-weight:700}
+.filter-tabs{display:flex;gap:4px}
+.filter-tab{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--mid);transition:all .15s}
+.filter-tab.active{background:var(--red);color:#fff;border-color:var(--red)}
+.orders-table{width:100%;border-collapse:collapse}
+.orders-table th{padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:var(--soft);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+.orders-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle}
+.orders-table tr:last-child td{border-bottom:none}
+.orders-table tr:hover td{background:#fafafa}
+.orders-table tr.new-order td{background:#fffbeb;animation:newrow .5s ease}
+@keyframes newrow{from{background:#fef3c7}to{background:#fffbeb}}
+.order-id{font-weight:700;font-size:12px;color:var(--mid);font-family:monospace}
+.order-customer{font-weight:600}
+.order-phone{font-size:12px;color:var(--mid)}
+.order-items{font-size:12px;color:var(--mid);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.order-total{font-weight:700;color:var(--dark)}
+.order-date{font-size:12px;color:var(--soft)}
+.status-select{padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;font-family:inherit;outline:none;background:var(--white);transition:all .15s}
+.s-new      {border-color:#fbbf24;color:#92400e;background:#fef3c7}
+.s-accepted {border-color:#60a5fa;color:#1e40af;background:#dbeafe}
+.s-cooking  {border-color:#f87171;color:#991b1b;background:#fee2e2}
+.s-delivered{border-color:#34d399;color:#065f46;background:#d1fae5}
+.s-cancelled{border-color:#d1d5db;color:#6b7280;background:#f3f4f6}
+.panel{display:none}.panel.active{display:block}
+.refresh-btn{padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--white);font-size:12px;font-weight:600;cursor:pointer;color:var(--mid);transition:all .15s;font-family:inherit}
+.refresh-btn:hover{background:var(--light)}
+.address-cell{font-size:12px;color:var(--mid);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.address-cell:hover{color:var(--blue);text-decoration:underline}
+.map-link{color:var(--blue);text-decoration:none;font-size:11px;font-weight:600}
+.empty-state{padding:48px;text-align:center;color:var(--soft);font-size:14px}
+.toast{position:fixed;top:20px;right:20px;background:var(--dark);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;transform:translateY(-80px);transition:transform .3s;display:flex;align-items:center;gap:8px}
+.toast.show{transform:translateY(0)}
+.notification{position:fixed;top:20px;right:20px;background:var(--white);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.12);z-index:999;width:300px;transform:translateX(340px);transition:transform .3s}
+.notification.show{transform:translateX(0)}
+.notif-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.notif-body{font-size:12px;color:var(--mid)}
+.notif-close{position:absolute;top:10px;right:12px;cursor:pointer;color:var(--soft);font-size:16px}
+
+@media(max-width:768px){
+  .sidebar{width:60px;padding:16px 8px}
+  .sidebar-logo{font-size:0}.nav-item span{display:none}
+  .main{margin-left:60px;padding:16px}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .orders-table th:nth-child(4),.orders-table td:nth-child(4),
+  .orders-table th:nth-child(5),.orders-table td:nth-child(5){display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">🍔 <span>Holland</span></div>
+  <div class="nav-item active" onclick="showPanel('dashboard')"><span class="nav-icon">📊</span><span>Dashboard</span></div>
+  <div class="nav-item" onclick="showPanel('orders')"><span class="nav-icon">📦</span><span>Buyurtmalar</span></div>
+  <div class="nav-item" onclick="showPanel('stats')"><span class="nav-icon">📈</span><span>Statistika</span></div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="live-badge"><div class="live-dot"></div><span>Real vaqt</span></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="panel active" id="panel-dashboard">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Foydalanuvchilar</div><div class="stat-num" id="s-users">—</div><div class="stat-sub">Jami</div></div>
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-label">Bugungi buyurtmalar</div><div class="stat-num" id="s-today">—</div><div class="stat-sub" id="s-today-sub">Jami —</div></div>
+      <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-label">Jarayondagi</div><div class="stat-num" id="s-pending">—</div><div class="stat-sub">Yangi, qabul, pishirilmoqda</div></div>
+      <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-label">Bugungi tushum</div><div class="stat-num" id="s-revenue">—</div><div class="stat-sub" id="s-week-rev">Hafta: —</div></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Haftalik buyurtmalar</div>
+      <div class="bar-chart" id="bar-chart"></div>
+    </div>
+
+    <div class="orders-card">
+      <div class="orders-header">
+        <div class="orders-title">Oxirgi buyurtmalar</div>
+        <button class="refresh-btn" onclick="loadOrders()">Yangilash</button>
+      </div>
+      <div id="dashboard-orders-body"></div>
+    </div>
+  </div>
+
+  <!-- ORDERS -->
+  <div class="panel" id="panel-orders">
+    <div class="orders-card">
+      <div class="orders-header">
+        <div class="orders-title">Barcha buyurtmalar</div>
+        <div class="filter-tabs">
+          <div class="filter-tab active" onclick="filterOrders('all',this)">Hammasi</div>
+          <div class="filter-tab" onclick="filterOrders('new',this)">Yangi</div>
+          <div class="filter-tab" onclick="filterOrders('accepted',this)">Qabul</div>
+          <div class="filter-tab" onclick="filterOrders('cooking',this)">Pishirilmoqda</div>
+          <div class="filter-tab" onclick="filterOrders('delivered',this)">Yetkazildi</div>
+        </div>
+      </div>
+      <div id="orders-body"></div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="panel" id="panel-stats">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-label">Haftalik buyurtmalar</div><div class="stat-num" id="ss-week">—</div></div>
+      <div class="stat-card"><div class="stat-icon">💵</div><div class="stat-label">Haftalik tushum</div><div class="stat-num" id="ss-week-rev">—</div></div>
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-label">Jami buyurtmalar</div><div class="stat-num" id="ss-total">—</div></div>
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Jami mijozlar</div><div class="stat-num" id="ss-users">—</div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Holat bo'yicha taqsimot</div>
+      <div id="status-bars"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+<div class="notification" id="notif">
+  <div class="notif-close" onclick="closeNotif()">✕</div>
+  <div class="notif-title" id="notif-title"></div>
+  <div class="notif-body" id="notif-body"></div>
+</div>
+
+<script>
+const PASS = new URLSearchParams(location.search).get('pass') || '';
+const API  = '';
+
+const STATUS_LABELS = {new:'🆕 Yangi',accepted:'✅ Qabul',cooking:'🍳 Tayyorlanmoqda',delivered:'🚀 Yetkazildi',cancelled:'❌ Bekor'};
+const STATUS_CLASS  = {new:'s-new',accepted:'s-accepted',cooking:'s-cooking',delivered:'s-delivered',cancelled:'s-cancelled'};
+const STATUS_OPTS   = ['new','accepted','cooking','delivered','cancelled'];
+
+function fmt(n){ return new Intl.NumberFormat('uz-UZ').format(Math.round(n)); }
+function fmtDate(d){ return new Date(d).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+
+let allOrders=[], statsData={}, currentFilter='all';
+
+// ── PANELS ──
+function showPanel(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach((n,i)=>{
+    n.classList.toggle('active',['dashboard','orders','stats'][i]===name);
+  });
+  document.getElementById('panel-'+name).classList.add('active');
+  document.getElementById('page-title').textContent={dashboard:'Dashboard',orders:'Buyurtmalar',stats:'Statistika'}[name];
+  if(name==='orders') renderOrdersTable(allOrders, currentFilter);
+}
+
+// ── STATS ──
+async function loadStats(){
+  try{
+    const r=await fetch(`${API}/api/admin/stats?pass=${PASS}`);
+    statsData=await r.json();
+    document.getElementById('s-users').textContent=fmt(statsData.users||0);
+    document.getElementById('s-today').textContent=fmt(statsData.todayOrders||0);
+    document.getElementById('s-today-sub').textContent='Jami '+fmt(statsData.totalOrders||0);
+    document.getElementById('s-pending').textContent=fmt(statsData.pending||0);
+    document.getElementById('s-revenue').textContent=fmt(statsData.todaySum||0)+' so\'m';
+    document.getElementById('s-week-rev').textContent='Hafta: '+fmt(statsData.weekSum||0)+' so\'m';
+    document.getElementById('ss-week').textContent=fmt(statsData.weekOrders||0);
+    document.getElementById('ss-week-rev').textContent=fmt(statsData.weekSum||0)+' so\'m';
+    document.getElementById('ss-total').textContent=fmt(statsData.totalOrders||0);
+    document.getElementById('ss-users').textContent=fmt(statsData.users||0);
+    renderBarChart(statsData.daily||[]);
+    renderStatusBars(statsData.statusCounts||[]);
+  } catch(e){ console.error(e); }
+}
+
+function renderBarChart(daily){
+  const el=document.getElementById('bar-chart');
+  if(!daily.length){el.innerHTML='<div style="color:var(--soft);font-size:13px;padding:20px">Ma\'lumot yo\'q</div>';return;}
+  const max=Math.max(...daily.map(d=>d.count),1);
+  el.innerHTML=daily.map(d=>{
+    const h=Math.max(Math.round((d.count/max)*100),4);
+    const date=d._id.slice(5);
+    return `<div class="bar-wrap">
+      <div class="bar-val">${d.count}</div>
+      <div class="bar" style="height:${h}px" title="${d._id}: ${d.count} buyurtma, ${fmt(d.total)} so'm"></div>
+      <div class="bar-label">${date}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderStatusBars(counts){
+  const el=document.getElementById('status-bars');
+  const total=counts.reduce((s,c)=>s+c.count,0)||1;
+  el.innerHTML=counts.map(c=>{
+    const pct=Math.round(c.count/total*100);
+    const label=STATUS_LABELS[c._id]||c._id;
+    const colors={new:'#f59e0b',accepted:'#3b82f6',cooking:'#ef4444',delivered:'#10b981',cancelled:'#9ca3af'};
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
+        <span style="font-weight:600">${label}</span>
+        <span style="color:var(--mid)">${c.count} ta (${pct}%)</span>
+      </div>
+      <div style="height:8px;background:#f3f4f6;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${colors[c._id]||'#9ca3af'};border-radius:4px;transition:width .5s"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ORDERS ──
+async function loadOrders(filter='all'){
+  try{
+    const f=filter!=='all'?`&status=${filter}`:'';
+    const r=await fetch(`${API}/api/admin/orders?pass=${PASS}&limit=50${f}`);
+    const data=await r.json();
+    allOrders=data.orders||[];
+    renderDashboardOrders(allOrders.slice(0,10));
+    renderOrdersTable(allOrders, currentFilter);
+  } catch(e){ console.error(e); }
+}
+
+function orderRowHTML(o, highlight=false){
+  const id=(o._id||o.id||'').toString();
+  const shortId=id.slice(-6).toUpperCase();
+  const items=(o.items||[]).map(i=>i.name+' ×'+i.qty).join(', ');
+  const gpsLink=o.gpsLat?`<a class="map-link" href="https://maps.google.com/?q=${o.gpsLat},${o.gpsLng}" target="_blank">🗺</a> `:'';
+  return `<tr id="row-${id}" class="${highlight?'new-order':''}">
+    <td><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div></td>
+    <td><div class="order-customer">${o.name}</div><div class="order-phone">${o.phone}</div></td>
+    <td><div class="order-items" title="${items}">${items}</div></td>
+    <td><div class="address-cell" title="${o.address}" onclick="copyAddr('${o.address.replace(/'/g,"\\'")}')">
+      ${gpsLink}${o.address}</div></td>
+    <td><div class="order-total">${fmt(o.total)} so'm</div></td>
+    <td>
+      <select class="status-select ${STATUS_CLASS[o.status]||'s-new'}" onchange="changeStatus('${id}',this)">
+        ${STATUS_OPTS.map(s=>`<option value="${s}"${s===o.status?' selected':''}>${STATUS_LABELS[s]}</option>`).join('')}
+      </select>
+    </td>
+  </tr>`;
+}
+
+function renderDashboardOrders(orders){
+  const el=document.getElementById('dashboard-orders-body');
+  if(!orders.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
+  el.innerHTML=`<table class="orders-table">
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <tbody>${orders.map(o=>orderRowHTML(o)).join('')}</tbody>
+  </table>`;
+}
+
+function renderOrdersTable(orders, filter){
+  const el=document.getElementById('orders-body');
+  const filtered=filter==='all'?orders:orders.filter(o=>o.status===filter);
+  if(!filtered.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
+  el.innerHTML=`<table class="orders-table">
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <tbody>${filtered.map(o=>orderRowHTML(o)).join('')}</tbody>
+  </table>`;
+}
+
+function filterOrders(status,el){
+  currentFilter=status;
+  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderOrdersTable(allOrders, status);
+}
+
+async function changeStatus(id, selectEl){
+  const status=selectEl.value;
+  selectEl.className='status-select '+STATUS_CLASS[status];
+  try{
+    await fetch(`${API}/api/admin/orders/${id}?pass=${PASS}`,{
+      method:'PATCH', headers:{'Content-Type':'application/json','x-admin-pass':PASS},
+      body:JSON.stringify({status})
+    });
+    toast('✅ Holat yangilandi: '+STATUS_LABELS[status]);
+    // Row ni ham yangilash
+    const row=document.getElementById('row-'+id);
+    if(row) row.querySelectorAll('.status-select').forEach(s=>{ s.value=status; s.className='status-select '+STATUS_CLASS[status]; });
+    loadStats();
+  } catch { toast('❌ Xatolik yuz berdi'); }
+}
+
+function copyAddr(addr){
+  navigator.clipboard.writeText(addr).then(()=>toast('📋 Manzil nusxa olindi'));
+}
+
+// ── REAL-TIME SSE ──
+function connectSSE(){
+  const sse=new EventSource(`${API}/api/admin/stream?pass=${PASS}`);
+  sse.addEventListener('new_order', e=>{
+    const {order}=JSON.parse(e.data);
+    if(order){
+      allOrders.unshift(order);
+      renderDashboardOrders(allOrders.slice(0,10));
+      renderOrdersTable(allOrders, currentFilter);
+    }
+    showNotif('🛎 Yangi buyurtma!',`${order?.name||''} — ${fmt(order?.total||0)} so'm`);
+    loadStats();
+  });
+  sse.addEventListener('order_updated', e=>{
+    const {orderId,status}=JSON.parse(e.data);
+    const o=allOrders.find(x=>(x._id||x.id||'').toString()===orderId);
+    if(o){ o.status=status; }
+    document.querySelectorAll(`.status-select`).forEach(sel=>{
+      const row=sel.closest('tr');
+      if(row&&row.id===`row-${orderId}`){ sel.value=status; sel.className='status-select '+STATUS_CLASS[status]; }
+    });
+    loadStats();
+  });
+  sse.onerror=()=>setTimeout(connectSSE,5000);
+}
+
+// ── NOTIFICATION ──
+let notifTimer;
+function showNotif(title,body){
+  document.getElementById('notif-title').textContent=title;
+  document.getElementById('notif-body').textContent=body;
+  const n=document.getElementById('notif');
+  n.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer=setTimeout(()=>n.classList.remove('show'),6000);
+  if(Notification.permission==='granted') new Notification(title,{body,icon:'/favicon.ico'});
+}
+function closeNotif(){ document.getElementById('notif').classList.remove('show'); }
+
+// ── TOAST ──
+let _tt;
+function toast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  t.classList.add('show'); clearTimeout(_tt);
+  _tt=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ── INIT ──
+if(Notification.permission==='default') Notification.requestPermission();
+loadStats();
+loadOrders();
+connectSSE();
+setInterval(()=>{ loadStats(); loadOrders(); }, 60000);
+</script>
+</body>
+</html>
