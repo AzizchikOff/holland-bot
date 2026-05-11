@@ -77,7 +77,14 @@ function broadcastStats() {
     clients.forEach(list => list.forEach(res => { try { res.write(msg); } catch {} }));
   })();
 }
-setInterval(broadcastStats, 30000);
+
+let statsIntervalId = null;
+if (!statsIntervalId) {
+  statsIntervalId = setInterval(broadcastStats, 30000);
+}
+process.on("beforeExit", () => {
+  if (statsIntervalId) clearInterval(statsIntervalId);
+});
 
 app.get("/api/stream/:userId", (req, res) => {
   res.setHeader("Content-Type",  "text/event-stream");
