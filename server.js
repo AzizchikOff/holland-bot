@@ -6,14 +6,23 @@ const TelegramBot = require("node-telegram-bot-api");
 const path        = require("path");
 const crypto      = require("crypto");
 
-const app        = express();
-const PORT       = process.env.PORT || 3000;
-const ADMIN_ID   = Number(process.env.ADMIN_ID);
-const BOT_TOKEN  = process.env.BOT_TOKEN;
-const WEBHOOK_URL = process.env.WEBHOOK_URL; // https://holland-bot.onrender.com
+const app         = express();
+const PORT        = process.env.PORT || 3000;
+const ADMIN_ID    = Number(process.env.ADMIN_ID);
+const BOT_TOKEN   = process.env.BOT_TOKEN;
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const ADMIN_PASS  = process.env.ADMIN_PASS || "holland2025";
 
-// ── Webhook yoki polling ────────────────────
+// ── Logger (console.log o'rniga) ───────────────────────────
+// Production da faqat error va warning loglanadi
+const log = {
+  info:  (...a) => process.env.NODE_ENV !== "production" && console.log("[INFO]",  ...a),
+  warn:  (...a) => console.warn("[WARN]",  ...a),
+  error: (...a) => console.error("[ERROR]", ...a),
+  start: (...a) => console.log("[START]", ...a),  // faqat ishga tushganda
+};
+
+// ── Webhook yoki polling ────────────────────────────────────
 const isProduction = !!WEBHOOK_URL;
 const bot = isProduction
   ? new TelegramBot(BOT_TOKEN, { webHook: { port: false } })
@@ -23,10 +32,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── MongoDB ────────────────────────────────
+// ── MongoDB ────────────────────────────────────────────────
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB ulandi"))
-  .catch(e => console.error("❌ MongoDB:", e.message));
+  .then(() => log.start("MongoDB ulandi"))
+  .catch(e  => log.error("MongoDB:", e.message));
 
 const UserSchema = new mongoose.Schema({
   userId:    { type: Number, unique: true },
@@ -50,9 +59,9 @@ const OrderSchema = new mongoose.Schema({
 }, { timestamps: true });
 const Order = mongoose.model("Order", OrderSchema);
 
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  SSE — Real-time
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 const clients = new Map();
 
 function addClient(userId, res) {
@@ -78,44 +87,43 @@ function broadcastStats() {
   })();
 }
 
-let statsIntervalId = null;
-if (!statsIntervalId) {
-  statsIntervalId = setInterval(broadcastStats, 30000);
-}
-process.on("beforeExit", () => {
-  if (statsIntervalId) clearInterval(statsIntervalId);
-});
-
-app.get("/api/stream/:userId", (req, res) => {
-  res.setHeader("Content-Type",  "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection",    "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.flushHeaders();
-  const userId = Number(req.params.userId);
-  res.write(`event: connected\ndata: {"ok":true}\n\n`);
-  (async () => {
-    const users  = await User.countDocuments();
-    const orders = await Order.countDocuments();
-    res.write(`event: stats\ndata: ${JSON.stringify({ users, orders })}\n\n`);
-    if (userId) {
-      const userOrders = await Order.find({ userId }).sort({ createdAt: -1 }).limit(10);
-      res.write(`event: orders\ndata: ${JSON.stringify(userOrders)}\n\n`);
-    }
-  })();
-  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 20000);
-  addClient(userId, res);
-  req.on("close", () => { clearInterval(ping); removeClient(userId, res); });
-});
-
-// Admin SSE
+// ── Admin SSE ───────────────────────────────────────────────
 const adminClients = new Set();
 function sendToAdmin(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   adminClients.forEach(res => { try { res.write(msg); } catch {} });
 }
+
+// ══════════════════════════════════════════════════════════
+//  ADMIN AUTH MIDDLEWARE
+//  ✅ TUZATILDI: parol URL da emas, Authorization header da yoki
+//  POST body da yuboriladi — browser history da saqlanmaydi
+// ══════════════════════════════════════════════════════════
+function adminAuth(req, res, next) {
+  // 1. Authorization: Bearer <pass>  header
+  const authHeader = req.headers["authorization"] || "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  // 2. x-admin-pass header (eski usul, hali qo'llab-quvvatlanadi)
+  const headerPass = req.headers["x-admin-pass"];
+
+  // 3. POST/PATCH body dan (faqat JSON so'rovlar uchun)
+  const bodyPass = req.body?.adminPass;
+
+  const pass = bearer || headerPass || bodyPass;
+  if (pass === ADMIN_PASS) return next();
+
+  res.status(401).json({ error: "Ruxsat yo'q" });
+}
+
+// SSE admin stream — Authorization query param orqali (SSE header yuborish qiyin)
+// Xavfsizroq: qisqa muddatli token ishlatish kerak, lekin hozircha hash orqali
 app.get("/api/admin/stream", (req, res) => {
-  if (req.query.pass !== ADMIN_PASS) return res.status(401).end();
+  // SSE uchun query token — pass ni hash qilib yuboriladi
+  const token = req.query.token;
+  const expected = crypto.createHash("sha256").update(ADMIN_PASS).digest("hex").slice(0, 16);
+  if (token !== expected) return res.status(401).end();
+
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection",    "keep-alive");
@@ -126,7 +134,7 @@ app.get("/api/admin/stream", (req, res) => {
   req.on("close", () => { clearInterval(ping); adminClients.delete(res); });
 });
 
-// ── Helpers ────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────
 function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n); }
 
 const STATUS = {
@@ -150,7 +158,7 @@ function mainKb() {
   return {
     keyboard: [
       [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-      [{ text: "📋 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
+      [{ text: "📦 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
       [{ text: "📞 Bog'lanish" }],
     ],
     resize_keyboard: true, persistent: true,
@@ -166,20 +174,9 @@ async function saveUser(msg) {
   } catch {}
 }
 
-function mainKb() {
-  return {
-    keyboard: [
-      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-      [{ text: "📋 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
-      [{ text: "📞 Bog'lanish" }],
-    ],
-    resize_keyboard: true, persistent: true,
-  };
-}
-
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  WEBHOOK setup
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 if (isProduction) {
   const secretToken = crypto.randomBytes(32).toString("hex");
   bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`, { secret_token: secretToken });
@@ -187,14 +184,14 @@ if (isProduction) {
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
-  console.log("✅ Webhook rejimida ishlayapti (tez!)");
+  log.start("Webhook rejimida ishlayapti");
 } else {
-  console.log("⚡ Polling rejimida ishlayapti");
+  log.start("Polling rejimida ishlayapti");
 }
 
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  BOT HANDLERS
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 bot.onText(/\/start/, async (msg) => {
   const id   = msg.chat.id;
   const name = msg.chat.first_name || "Mehmon";
@@ -214,13 +211,13 @@ bot.onText(/\/start/, async (msg) => {
     text += `#${lastOrder._id.toString().slice(-6).toUpperCase()} — ${STATUS[lastOrder.status]}\n`;
     text += `💰 ${fmt(lastOrder.total)} so'm\n\n`;
   }
-  text += `🛍️ Buyurtma berish uchun quyidagi tugmani bosing 👇`;
+  text += `🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇`;
   await bot.sendMessage(id, text, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
         [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-        [{ text: "📋 Buyurtmalarim", callback_data: "my_orders" },
+        [{ text: "📦 Buyurtmalarim", callback_data: "my_orders" },
          { text: "📞 Bog'lanish",    callback_data: "contact"   }],
       ],
     },
@@ -240,13 +237,15 @@ bot.onText(/\/admin/, async (msg) => {
       { $group: { _id: null, total: { $sum: "$total" } } }
     ]),
   ]);
+  // ✅ Admin panel URL da parol ko'rsatilmaydi
+  const adminUrl = `${WEBHOOK_URL}/admin`;
   let text = `📊 *Holland Admin Panel*\n\n`;
   text += `👥 Foydalanuvchilar: *${userCount}*\n`;
   text += `📦 Jami buyurtmalar: *${orderCount}*\n`;
   text += `📅 Bugungi buyurtmalar: *${todayOrders}*\n`;
   text += `⏳ Jarayondagi: *${pending}*\n`;
   text += `💰 Bugungi tushum: *${fmt(todaySum[0]?.total || 0)} so'm*\n\n`;
-  text += `🔗 [Admin panelni ochish](${WEBHOOK_URL}/admin?pass=${ADMIN_PASS})`;
+  text += `🌐 [Admin panelni ochish](${adminUrl})`;
   await bot.sendMessage(ADMIN_ID, text, { parse_mode: "Markdown" });
 });
 
@@ -256,12 +255,12 @@ bot.on("message", async (msg) => {
   await saveUser(msg);
   const id = msg.chat.id, text = msg.text || "";
 
-  if (text === "📋 Buyurtmalarim") {
+  if (text === "📦 Buyurtmalarim") {
     const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
     if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
       reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] }
     });
-    let txt = "📋 *So'nggi buyurtmalaringiz:*\n\n";
+    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => {
       txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
       txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
@@ -302,36 +301,82 @@ bot.on("callback_query", async (q) => {
   if (data === "my_orders") {
     const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
     if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainKb() });
-    let txt = "📋 *So'nggi buyurtmalaringiz:*\n\n";
+    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => { txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`; });
     return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
   }
   if (data === "contact") return bot.sendMessage(id, `📞 *Bog'lanish:*\n\n📱 +998 90 699 95 95\n💬 @Holland_fries`, { parse_mode: "Markdown", reply_markup: mainKb() });
 });
 
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 //  API ROUTES
-// ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+
+// ✅ TUZATILDI: Input validatsiya kuchaytirildi
+function validateOrder({ name, phone, address, items }) {
+  if (!name || typeof name !== "string" || name.trim().length < 2) {
+    return "Ism noto'g'ri (kamida 2 harf)";
+  }
+  if (!phone || typeof phone !== "string") {
+    return "Telefon raqam kiritilmagan";
+  }
+  // +998 XXXXXXXXX yoki 9 raqam
+  const cleaned = phone.replace(/[\s\-\(\)]/g, "");
+  if (!/^(\+998\d{9}|998\d{9}|\d{9})$/.test(cleaned)) {
+    return "Telefon raqam noto'g'ri format (+998 XX XXX XX XX)";
+  }
+  if (!address || typeof address !== "string" || address.trim().length < 5) {
+    return "Manzil noto'g'ri (kamida 5 belgi)";
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return "Savat bo'sh";
+  }
+  if (items.length > 50) {
+    return "Savatta juda ko'p mahsulot";
+  }
+  return null;
+}
+
 app.post("/api/orders", async (req, res) => {
   try {
     const { userId, name, phone, address, note, gps, items, total } = req.body;
-    if (!name || !phone || !address || !items?.length) return res.json({ success: false, error: "Ma'lumotlar to'liq emas" });
-    const order = await Order.create({ userId, name, phone, address, note: note||"", gpsLat: gps?.lat||null, gpsLng: gps?.lng||null, items, total });
+
+    // Validatsiya
+    const validErr = validateOrder({ name, phone, address, items });
+    if (validErr) return res.json({ success: false, error: validErr });
+
+    const order = await Order.create({
+      userId,
+      name: name.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      note:    note || "",
+      gpsLat:  gps?.lat || null,
+      gpsLng:  gps?.lng || null,
+      items,
+      total,
+    });
+
     broadcastStats();
+
     if (ADMIN_ID) {
-      let txt = `🔔 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
-      txt += `👤 ${order.name}\n📱 ${order.phone}\n📍 ${order.address}\n`;
+      let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
+      txt += `👤 ${order.name}\n📞 ${order.phone}\n📍 ${order.address}\n`;
       if (order.gpsLat) txt += `🗺 [Xaritada](https://maps.google.com/?q=${order.gpsLat},${order.gpsLng})\n`;
       if (order.note)   txt += `💬 ${order.note}\n`;
-      txt += `\n📋 *Tarkibi:*\n`;
-      order.items.forEach(i => { txt += `• ${i.name} × ${i.qty} = ${fmt(i.price*i.qty)} so'm\n`; });
-      txt += `\n💵 *Jami: ${fmt(order.total)} so'm*`;
+      txt += `\n📦 *Tarkibi:*\n`;
+      order.items.forEach(i => { txt += `• ${i.name} × ${i.qty} = ${fmt(i.price * i.qty)} so'm\n`; });
+      txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
       await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "Markdown", reply_markup: adminKb(order._id.toString()) });
     }
+
     sendToUser(userId, "new_order", { orderId: order._id.toString(), status: "new", total: order.total, items: order.items });
     sendToAdmin("new_order", { order: { ...order.toObject(), id: order._id } });
     res.json({ success: true, orderId: order._id });
-  } catch (e) { console.error(e); res.json({ success: false, error: e.message }); }
+  } catch (e) {
+    log.error("/api/orders:", e.message);
+    res.json({ success: false, error: "Server xatosi" });
+  }
 });
 
 app.get("/api/orders/user/:uid", async (req, res) => {
@@ -339,11 +384,8 @@ app.get("/api/orders/user/:uid", async (req, res) => {
   catch { res.json([]); }
 });
 
-// Admin API routes
-app.use("/api/admin", (req, res, next) => {
-  if (req.query.pass === ADMIN_PASS || req.headers["x-admin-pass"] === ADMIN_PASS) return next();
-  res.status(401).json({ error: "Ruxsat yo'q" });
-});
+// ✅ Admin API — adminAuth middleware ishlatadi (URL da parol yo'q)
+app.use("/api/admin", adminAuth);
 
 app.get("/api/admin/orders", async (req, res) => {
   try {
@@ -360,19 +402,25 @@ app.get("/api/admin/orders", async (req, res) => {
 app.patch("/api/admin/orders/:id", async (req, res) => {
   try {
     const { status } = req.body;
+    const allowed = ["new", "accepted", "cooking", "delivered", "cancelled"];
+    if (!allowed.includes(status)) return res.json({ success: false, error: "Noto'g'ri status" });
+
     const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
     if (!order) return res.json({ success: false });
     sendToUser(order.userId, "order_update", { orderId: req.params.id, status, statusLabel: STATUS[status] });
     sendToAdmin("order_updated", { orderId: req.params.id, status });
     try { await bot.sendMessage(order.userId, `🔔 *Buyurtma holati:*\n${STATUS[status]}`, { parse_mode: "Markdown" }); } catch {}
     res.json({ success: true, order });
-  } catch (e) { res.json({ success: false, error: e.message }); }
+  } catch (e) {
+    log.error("PATCH order:", e.message);
+    res.json({ success: false, error: e.message });
+  }
 });
 
 app.get("/api/admin/stats", async (req, res) => {
   try {
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-    const weekStart  = new Date(); weekStart.setDate(weekStart.getDate()-7);
+    const weekStart  = new Date(); weekStart.setDate(weekStart.getDate() - 7);
     const [users, totalOrders, todayOrders, weekOrders, pending, todaySumArr, weekSumArr, statusCounts] = await Promise.all([
       User.countDocuments(),
       Order.countDocuments(),
@@ -394,7 +442,10 @@ app.get("/api/admin/stats", async (req, res) => {
       weekSum:  weekSumArr[0]?.total  || 0,
       statusCounts, daily,
     });
-  } catch(e) { res.json({ error: e.message }); }
+  } catch(e) {
+    log.error("stats:", e.message);
+    res.json({ error: e.message });
+  }
 });
 
 app.get("/api/stats", async (req, res) => {
@@ -402,19 +453,22 @@ app.get("/api/stats", async (req, res) => {
   catch { res.json({ users: 0, orders: 0 }); }
 });
 
-// Admin panel HTML
+// ── Admin panel HTML ────────────────────────────────────────
+// ✅ TUZATILDI: parol URL da emas, POST bilan yuboriladi
 app.get("/admin", (req, res) => {
-  if (req.query.pass !== ADMIN_PASS) {
-    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Holland Admin</title>
-    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:sans-serif;background:#f3f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .box{background:#fff;padding:32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);width:320px}
-    h2{font-size:20px;margin-bottom:20px;color:#111}input{width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;margin-bottom:12px;outline:none}
-    button{width:100%;padding:14px;background:#E8342A;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}</style></head>
-    <body><div class="box"><h2>🍔 Holland Admin</h2>
-    <form method="get"><input type="password" name="pass" placeholder="Parol..." autofocus/><button type="submit">Kirish</button></form></div></body></html>`);
-  }
+  // Token query param bilan kirish (admin bot xabari orqali keladi)
+  // yoki parolsiz — forma orqali
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+// ✅ YANGI: Admin login endpoint (URL da parol yo'q)
+app.post("/api/admin/login", (req, res) => {
+  const { pass } = req.body;
+  if (pass !== ADMIN_PASS) return res.status(401).json({ error: "Parol noto'g'ri" });
+  // Oddiy token: parolning SHA-256 ning birinchi 32 belgisi
+  const token = crypto.createHash("sha256").update(ADMIN_PASS).digest("hex").slice(0, 32);
+  res.json({ success: true, token });
+});
+
 app.get("/", (req, res) => res.json({ ok: true, service: "Holland API ✅" }));
-app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));
+app.listen(PORT, () => log.start(`Holland API: http://localhost:${PORT}`));
