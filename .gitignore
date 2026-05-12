@@ -1,1 +1,4 @@
 *.db
+bot/.env
+.env
+*.db
