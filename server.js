@@ -150,7 +150,7 @@ function mainKb() {
   return {
     keyboard: [
       [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-      [{ text: "📦 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
+      [{ text: "📋 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
       [{ text: "📞 Bog'lanish" }],
     ],
     resize_keyboard: true, persistent: true,
@@ -164,6 +164,17 @@ async function saveUser(msg) {
       { upsert: true }
     );
   } catch {}
+}
+
+function mainKb() {
+  return {
+    keyboard: [
+      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
+      [{ text: "📋 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
+      [{ text: "📞 Bog'lanish" }],
+    ],
+    resize_keyboard: true, persistent: true,
+  };
 }
 
 // ══════════════════════════════════════════
@@ -203,13 +214,13 @@ bot.onText(/\/start/, async (msg) => {
     text += `#${lastOrder._id.toString().slice(-6).toUpperCase()} — ${STATUS[lastOrder.status]}\n`;
     text += `💰 ${fmt(lastOrder.total)} so'm\n\n`;
   }
-  text += `🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇`;
+  text += `🛍️ Buyurtma berish uchun quyidagi tugmani bosing 👇`;
   await bot.sendMessage(id, text, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
         [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-        [{ text: "📦 Buyurtmalarim", callback_data: "my_orders" },
+        [{ text: "📋 Buyurtmalarim", callback_data: "my_orders" },
          { text: "📞 Bog'lanish",    callback_data: "contact"   }],
       ],
     },
@@ -235,7 +246,7 @@ bot.onText(/\/admin/, async (msg) => {
   text += `📅 Bugungi buyurtmalar: *${todayOrders}*\n`;
   text += `⏳ Jarayondagi: *${pending}*\n`;
   text += `💰 Bugungi tushum: *${fmt(todaySum[0]?.total || 0)} so'm*\n\n`;
-  text += `🌐 [Admin panelni ochish](${WEBHOOK_URL}/admin?pass=${ADMIN_PASS})`;
+  text += `🔗 [Admin panelni ochish](${WEBHOOK_URL}/admin?pass=${ADMIN_PASS})`;
   await bot.sendMessage(ADMIN_ID, text, { parse_mode: "Markdown" });
 });
 
@@ -245,12 +256,12 @@ bot.on("message", async (msg) => {
   await saveUser(msg);
   const id = msg.chat.id, text = msg.text || "";
 
-  if (text === "📦 Buyurtmalarim") {
+  if (text === "📋 Buyurtmalarim") {
     const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
     if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
       reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] }
     });
-    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
+    let txt = "📋 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => {
       txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
       txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
@@ -291,7 +302,7 @@ bot.on("callback_query", async (q) => {
   if (data === "my_orders") {
     const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
     if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainKb() });
-    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
+    let txt = "📋 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => { txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`; });
     return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
   }
@@ -308,13 +319,13 @@ app.post("/api/orders", async (req, res) => {
     const order = await Order.create({ userId, name, phone, address, note: note||"", gpsLat: gps?.lat||null, gpsLng: gps?.lng||null, items, total });
     broadcastStats();
     if (ADMIN_ID) {
-      let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
-      txt += `👤 ${order.name}\n📞 ${order.phone}\n📍 ${order.address}\n`;
+      let txt = `🔔 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
+      txt += `👤 ${order.name}\n📱 ${order.phone}\n📍 ${order.address}\n`;
       if (order.gpsLat) txt += `🗺 [Xaritada](https://maps.google.com/?q=${order.gpsLat},${order.gpsLng})\n`;
       if (order.note)   txt += `💬 ${order.note}\n`;
-      txt += `\n📦 *Tarkibi:*\n`;
+      txt += `\n📋 *Tarkibi:*\n`;
       order.items.forEach(i => { txt += `• ${i.name} × ${i.qty} = ${fmt(i.price*i.qty)} so'm\n`; });
-      txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
+      txt += `\n💵 *Jami: ${fmt(order.total)} so'm*`;
       await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "Markdown", reply_markup: adminKb(order._id.toString()) });
     }
     sendToUser(userId, "new_order", { orderId: order._id.toString(), status: "new", total: order.total, items: order.items });
