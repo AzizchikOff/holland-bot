@@ -29,6 +29,12 @@ const STATUS_UZ = {
   cancelled: "Bekor qilindi",
 };
 
+const SOURCE_UZ = {
+  website: "Sayt",
+  miniapp: "Mini App",
+  bot:     "Bot",
+};
+
 // ══════════════════════════════════════════════════════════
 //  ASOSIY HISOBOT GENERATSIYASI
 // ══════════════════════════════════════════════════════════
@@ -84,12 +90,13 @@ function generateReport(orders, period, title) {
 
   // ── 2. BARCHA BUYURTMALAR ─────────────────────────────
   const ordersHeader = [
-    ["#", "ID", "Sana", "Mijoz", "Telefon", "Manzil", "Mahsulotlar", "Jami (so'm)", "Holat"]
+    ["#", "ID", "Sana", "Manba", "Mijoz", "Telefon", "Manzil", "Mahsulotlar", "Jami (so'm)", "Holat"]
   ];
   const ordersRows = orders.map((o, i) => [
     i + 1,
     (o._id || o.id || "").toString().slice(-6).toUpperCase(),
     fmtDate(o.createdAt || o.created_at),
+    SOURCE_UZ[o.source] || "Mini App",
     o.name  || "",
     o.phone || "",
     o.address || "",
@@ -100,7 +107,7 @@ function generateReport(orders, period, title) {
 
   const ws2 = XLSX.utils.aoa_to_sheet([...ordersHeader, ...ordersRows]);
   ws2["!cols"] = [
-    {wch:4},{wch:8},{wch:18},{wch:18},{wch:14},
+    {wch:4},{wch:8},{wch:18},{wch:10},{wch:18},{wch:14},
     {wch:30},{wch:40},{wch:14},{wch:16},
   ];
   XLSX.utils.book_append_sheet(wb, ws2, "📦 Buyurtmalar");

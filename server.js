@@ -1,31 +1,20 @@
 require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const mongoose = require("mongoose");
+const express     = require("express");
+const cors        = require("cors");
+const mongoose    = require("mongoose");
 const TelegramBot = require("node-telegram-bot-api");
-const path = require("path");
-const crypto = require("crypto");
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const ADMIN_ID = Number(process.env.ADMIN_ID);
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
-const ADMIN_PASS = process.env.ADMIN_PASS || "holland2025";
-const MINI_APP_URL =
-  process.env.MINI_APP_URL || "https://holland-namangan.netlify.app/app/";
+const path        = require("path");
 const { getReportBuffer } = require("./reports");
 
-// ── Logger ──────────────────────────────────────────────────
-const log = {
-  info: (...a) =>
-    process.env.NODE_ENV !== "production" && console.log("[INFO]", ...a),
-  warn: (...a) => console.warn("[WARN]", ...a),
-  error: (...a) => console.error("[ERROR]", ...a),
-  start: (...a) => console.log("[START]", ...a),
-};
+const app          = express();
+const PORT         = process.env.PORT || 3000;
+const ADMIN_ID     = Number(process.env.ADMIN_ID);
+const BOT_TOKEN    = process.env.BOT_TOKEN;
+const WEBHOOK_URL  = process.env.WEBHOOK_URL;
+const ADMIN_PASS   = process.env.ADMIN_PASS || "holland2025";
+const MINI_APP_URL = process.env.MINI_APP_URL || "https://holland-namangan.netlify.app/app/";
+const IMG_BASE     = process.env.IMG_BASE || "https://holland-namangan.netlify.app/images";
 
-// ── Bot setup ───────────────────────────────────────────────
 const isProduction = !!WEBHOOK_URL;
 const bot = isProduction
   ? new TelegramBot(BOT_TOKEN, { webHook: { port: false } })
@@ -35,677 +24,517 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── MongoDB ─────────────────────────────────────────────────
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => log.start("MongoDB ulandi"))
-  .catch((e) => log.error("MongoDB:", e.message));
+// ══════════════════════════════════════════
+//  MongoDB
+// ══════════════════════════════════════════
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB ulandi"))
+  .catch(e => console.error("❌ MongoDB:", e.message));
 
 const UserSchema = new mongoose.Schema({
-  userId: { type: Number, unique: true },
+  userId:    { type: Number, unique: true },
   firstName: String,
-  username: String,
-  joinedAt: { type: Date, default: Date.now },
+  username:  String,
+  joinedAt:  { type: Date, default: Date.now },
 });
 const User = mongoose.model("User", UserSchema);
 
-const OrderSchema = new mongoose.Schema(
-  {
-    userId: Number,
-    name: String,
-    phone: String,
-    address: String,
-    note: { type: String, default: "" },
-    gpsLat: Number,
-    gpsLng: Number,
-    items: Array,
-    total: Number,
-    status: { type: String, default: "new" },
-  },
-  { timestamps: true },
-);
+const OrderSchema = new mongoose.Schema({
+  userId:  Number,
+  name:    String,
+  phone:   String,
+  address: String,
+  note:    { type: String, default: "" },
+  gpsLat:  Number,
+  gpsLng:  Number,
+  items:   Array,
+  total:   Number,
+  status:  { type: String, default: "new" },
+  source:  { type: String, default: "miniapp" }, // miniapp | website | bot
+}, { timestamps: true });
 const Order = mongoose.model("Order", OrderSchema);
 
-// ── SSE: Real-time ──────────────────────────────────────────
+// ══════════════════════════════════════════
+//  MENU MA'LUMOTLARI
+// ══════════════════════════════════════════
+const CATEGORIES = [
+  { id: "free",   emoji: "🍟", label: "Holland Free",  desc: "Issiq va mazali kartoshka fri" },
+  { id: "burger", emoji: "🍔", label: "Burger",        desc: "Shirador burger va sandvichlar" },
+  { id: "hotdog", emoji: "🌭", label: "Hot-dog",       desc: "Klassik va asl hot-doglar" },
+  { id: "sous",   emoji: "🫙", label: "Sous",          desc: "Turli xil sous va qo'shimchalar" },
+  { id: "drink",  emoji: "🥤", label: "Ichimliklar",   desc: "Sovuq va shirin ichimliklar" },
+];
+
+const MENU = [
+  { id:"1",  cat:"free",   name:"Free Holland",              price:19000,  img:"free-classik.jpg",     desc:"Klassik Holland fri — chip-chip, issiq" },
+  { id:"2",  cat:"free",   name:"Free Holland Big",          price:23000,  img:"free-big.jpg",         desc:"Katta porsiya — to'yimli va mazali" },
+  { id:"3",  cat:"free",   name:"Free Holland Special",      price:35000,  img:"special.jpg",          desc:"Maxsus sous bilan — eng mashhur tanlov" },
+  { id:"4",  cat:"free",   name:"Loaded Fries",              price:32000,  img:"loaded.png",           desc:"Sous va toppinglar bilan to'ldirilgan fri" },
+  { id:"5",  cat:"free",   name:"Loaded Fries & Sausage",    price:28000,  img:"Loaded fries.jpg",     desc:"Kolbasa va sous bilan fri" },
+  { id:"6",  cat:"free",   name:"Loaded Cheese",             price:26000,  img:"loaded-cheese.jpg",    desc:"Pishloq sous bilan tez taom" },
+  { id:"7",  cat:"free",   name:"Chicken Cheese",            price:42000,  img:"Chickencheese.jpg",    desc:"Tovuq go'shti va pishloq kombinatsiyasi" },
+  { id:"8",  cat:"free",   name:"Crispy Chicken",            price:38000,  img:"crispy.jpg",           desc:"Qaynoq yog'da qovurilgan crispy tovuq" },
+  { id:"9",  cat:"free",   name:"Beef Box",                  price:55000,  img:"bifbox.jpg",           desc:"Mol go'shti bilan premium box" },
+  { id:"13", cat:"free",   name:"Kapsalan (lahm)",           price:75000,  img:"kapsalan.jpg",         desc:"Qo'y go'shti bilan maxsus kapsalan" },
+  { id:"14", cat:"free",   name:"Kapsalan (qiyma)",          price:58000,  img:"kapsalan.jpg",         desc:"Qiyma go'sht bilan kapsalan" },
+  { id:"15", cat:"free",   name:"Berlin Style (lahm)",       price:58000,  img:"berlin.jpg",           desc:"Berlin uslubida qo'y go'shti bilan" },
+  { id:"16", cat:"free",   name:"Berlin Style (qiyma)",      price:48000,  img:"berlin.jpg",           desc:"Berlin uslubida qiyma bilan" },
+  { id:"17", cat:"free",   name:"Briosh Steak Box",          price:65000,  img:"BrioshSteak.jpg",      desc:"Premium steak va briosh non bilan box" },
+  { id:"10", cat:"burger", name:"Chicken Burger",            price:35000,  img:"burger.jpg",           desc:"Juicy tovuq burger — klassik ta'm" },
+  { id:"19", cat:"burger", name:"Bon File (lahm)",           price:48000,  img:"Bonfile.jpg",          desc:"Qo'y go'shti bilan premium sandvich" },
+  { id:"20", cat:"burger", name:"Bon File (qiyma)",          price:38000,  img:"Bonfile.jpg",          desc:"Qiyma go'sht bilan shirador sandvich" },
+  { id:"11", cat:"hotdog", name:"Hot-Dog Classic",           price:15000,  img:"hotdog.jpg",           desc:"An'anaviy klassik hot-dog" },
+  { id:"12", cat:"hotdog", name:"Hot-Dog Canada",            price:20000,  img:"hotdog-canada.jpg",    desc:"Kanada uslubida premium hot-dog" },
+  { id:"18", cat:"hotdog", name:"Free-Dog",                  price:28000,  img:"free-dog.jpg",         desc:"Holland fri va hot-dog kombinatsiyasi" },
+  { id:"21", cat:"sous",   name:"Berlin Sous",               price:4000,   img:"berlinSous.png",       desc:"Berlin uslubida maxsus sous" },
+  { id:"22", cat:"sous",   name:"Burger Sous",               price:4000,   img:"burgerSous.png",       desc:"Burger uchun maxsus sous" },
+  { id:"23", cat:"sous",   name:"BBQ Sous",                  price:4000,   img:"bbq.png",              desc:"Shashlik va barbekyu uchun sous" },
+  { id:"24", cat:"sous",   name:"Ketchup-Mayonez",           price:4000,   img:"ketchup.png",          desc:"Aralash ketchup va mayonez" },
+  { id:"25", cat:"drink",  name:"Sprite Mojito 0.5L",        price:8000,   img:"sprite-moxito.jpg",    desc:"Yangi ta'mli mojito sprite" },
+  { id:"26", cat:"drink",  name:"Sprite 0.5L",               price:8000,   img:"sprite.jpg",           desc:"Klassik sovuq Sprite" },
+  { id:"27", cat:"drink",  name:"Sprite 0.25L",              price:7000,   img:"sprite-banochniy.jpg", desc:"Kichik o'lchamli Sprite" },
+  { id:"28", cat:"drink",  name:"Fanta 0.25L (banonchik)",   price:7000,   img:"fanta-banochniy.jpg",  desc:"Shirin apelsin ta'mli Fanta" },
+  { id:"30", cat:"drink",  name:"Fanta 0.25L (plastik)",     price:10000,  img:"fanta.jpg",            desc:"Fanta plastik shishada" },
+  { id:"32", cat:"drink",  name:"Coca Cola 0.25L",           price:7000,   img:"cola-banochniy.jpg",   desc:"Klassik Coca Cola — sovuq" },
+  { id:"34", cat:"drink",  name:"Coca Cola (shisha)",        price:10000,  img:"cola.jpg",             desc:"Shishada Coca Cola" },
+  { id:"35", cat:"drink",  name:"Fuse Tea 0.5L",             price:10000,  img:"fusetea-banochniy.jpg",desc:"Limonlu Fuse Tea" },
+  { id:"37", cat:"drink",  name:"Bonaqua 0.5L",              price:3000,   img:"bon-aqua.jpg",         desc:"Toza ichimlik suvi" },
+  { id:"38", cat:"drink",  name:"Cappy Pulpy 0.5L",          price:8000,   img:"cappy.jpg",            desc:"Mevali Cappy sharbat" },
+];
+
+function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n); }
+
+const STATUS = {
+  new:       "🆕 Yangi",
+  accepted:  "✅ Qabul qilindi",
+  cooking:   "🍳 Tayyorlanmoqda",
+  delivered: "🚀 Yetkazildi",
+  cancelled: "❌ Bekor qilindi",
+};
+
+// ══════════════════════════════════════════
+//  SSE — Real-time
+// ══════════════════════════════════════════
 const clients = new Map();
+const adminClients = new Set();
+
 function addClient(userId, res) {
   if (!clients.has(userId)) clients.set(userId, []);
   clients.get(userId).push(res);
 }
 function removeClient(userId, res) {
   if (!clients.has(userId)) return;
-  const list = clients.get(userId).filter((r) => r !== res);
-  if (!list.length) clients.delete(userId);
-  else clients.set(userId, list);
+  const list = clients.get(userId).filter(r => r !== res);
+  if (!list.length) clients.delete(userId); else clients.set(userId, list);
 }
 function sendToUser(userId, event, data) {
-  (clients.get(userId) || []).forEach((res) => {
-    try {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    } catch {}
+  (clients.get(userId) || []).forEach(res => {
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
   });
+}
+function sendToAdmin(event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  adminClients.forEach(res => { try { res.write(msg); } catch {} });
 }
 function broadcastStats() {
   (async () => {
-    const users = await User.countDocuments();
+    const users  = await User.countDocuments();
     const orders = await Order.countDocuments();
     const msg = `event: stats\ndata: ${JSON.stringify({ users, orders })}\n\n`;
-    clients.forEach((list) =>
-      list.forEach((res) => {
-        try {
-          res.write(msg);
-        } catch {}
-      }),
-    );
+    clients.forEach(list => list.forEach(res => { try { res.write(msg); } catch {} }));
+    adminClients.forEach(res => { try { res.write(msg); } catch {} });
   })();
 }
-const adminClients = new Set();
-function sendToAdmin(event, data) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  adminClients.forEach((res) => {
-    try {
-      res.write(msg);
-    } catch {}
-  });
-}
+setInterval(broadcastStats, 30000);
 
-// ── Admin Auth ──────────────────────────────────────────────
-function adminAuth(req, res, next) {
-  const authHeader = req.headers["authorization"] || "";
-  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const headerPass = req.headers["x-admin-pass"];
-  const bodyPass = req.body?.adminPass;
-  const pass = bearer || headerPass || bodyPass;
-  if (pass === ADMIN_PASS) return next();
-  res.status(401).json({ error: "Ruxsat yo'q" });
-}
-
-app.get("/api/admin/stream", (req, res) => {
-  const token = req.query.token;
-  const expected = crypto
-    .createHash("sha256")
-    .update(ADMIN_PASS)
-    .digest("hex")
-    .slice(0, 16);
-  if (token !== expected) return res.status(401).end();
-  res.setHeader("Content-Type", "text/event-stream");
+app.get("/api/stream/:userId", (req, res) => {
+  res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Connection",    "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.flushHeaders();
+  const userId = Number(req.params.userId);
   res.write(`event: connected\ndata: {"ok":true}\n\n`);
-  const ping = setInterval(() => {
-    try {
-      res.write(": ping\n\n");
-    } catch {
-      clearInterval(ping);
+  (async () => {
+    const users  = await User.countDocuments();
+    const orders = await Order.countDocuments();
+    res.write(`event: stats\ndata: ${JSON.stringify({ users, orders })}\n\n`);
+    if (userId) {
+      const userOrders = await Order.find({ userId }).sort({ createdAt: -1 }).limit(10);
+      res.write(`event: orders\ndata: ${JSON.stringify(userOrders)}\n\n`);
     }
-  }, 20000);
-  adminClients.add(res);
-  req.on("close", () => {
-    clearInterval(ping);
-    adminClients.delete(res);
-  });
+  })();
+  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 20000);
+  addClient(userId, res);
+  req.on("close", () => { clearInterval(ping); removeClient(userId, res); });
 });
 
-// ── Helpers ─────────────────────────────────────────────────
-function fmt(n) {
-  return new Intl.NumberFormat("uz-UZ").format(n);
-}
+app.get("/api/admin/stream", (req, res) => {
+  if (req.query.pass !== ADMIN_PASS) return res.status(401).end();
+  res.setHeader("Content-Type",  "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection",    "keep-alive");
+  res.flushHeaders();
+  res.write(`event: connected\ndata: {"ok":true}\n\n`);
+  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 20000);
+  adminClients.add(res);
+  req.on("close", () => { clearInterval(ping); adminClients.delete(res); });
+});
 
-const STATUS = {
-  new: "🆕 Yangi",
-  accepted: "✅ Qabul qilindi",
-  cooking: "🍳 Tayyorlanmoqda",
-  delivered: "🚀 Yetkazildi",
-  cancelled: "❌ Bekor qilindi",
-};
-
-// Admin buyurtma status keyboard
-function adminKb(id) {
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ Qabul", callback_data: `s_${id}_accepted` },
-        { text: "🍳 Tayyorlanmoqda", callback_data: `s_${id}_cooking` },
-      ],
-      [
-        { text: "🚀 Yetkazildi", callback_data: `s_${id}_delivered` },
-        { text: "❌ Bekor", callback_data: `s_${id}_cancelled` },
-      ],
-    ],
-  };
-}
-
-// Asosiy foydalanuvchi keyboard (reply keyboard)
+// ══════════════════════════════════════════
+//  Keyboards
+// ══════════════════════════════════════════
 function mainKb() {
   return {
     keyboard: [
       [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-      [{ text: "📦 Buyurtmalarim" }, { text: "ℹ️ Biz haqimizda" }],
-      [{ text: "📞 Bog'lanish" }],
+      [{ text: "📋 Menu ko'rish" }, { text: "📦 Buyurtmalarim" }],
+      [{ text: "ℹ️ Biz haqimizda" }, { text: "📞 Bog'lanish" }],
     ],
-    resize_keyboard: true,
-    persistent: true,
-    input_field_placeholder: "Buyurtma berish uchun tugmani bosing...",
+    resize_keyboard: true, persistent: true,
   };
 }
-
-// ── Webhook setup ───────────────────────────────────────────
-if (isProduction) {
-  const secretToken = crypto.randomBytes(32).toString("hex");
-  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`, {
-    secret_token: secretToken,
-  });
-  app.post(`/bot${BOT_TOKEN}`, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
-  });
-  log.start("Webhook rejimida ishlayapti");
-} else {
-  log.start("Polling rejimida ishlayapti");
+function menuKb() {
+  return {
+    inline_keyboard: [
+      ...CATEGORIES.map(c => [{ text: `${c.emoji} ${c.label}`, callback_data: `cat_${c.id}` }]),
+      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
+    ],
+  };
+}
+function catProductsKb(catId, page = 0) {
+  const items = MENU.filter(m => m.cat === catId);
+  const perPage = 5;
+  const start = page * perPage;
+  const pageItems = items.slice(start, start + perPage);
+  const rows = pageItems.map(p => [{ text: `${p.name} — ${fmt(p.price)} so'm`, callback_data: `prod_${p.id}` }]);
+  const nav = [];
+  if (page > 0) nav.push({ text: "⬅️ Ortga", callback_data: `page_${catId}_${page - 1}` });
+  if (start + perPage < items.length) nav.push({ text: "Keyingi ➡️", callback_data: `page_${catId}_${page + 1}` });
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: "🔙 Kategoriyalar", callback_data: "show_menu" }]);
+  rows.push([{ text: "🛒 Buyurtma berish", web_app: { url: MINI_APP_URL } }]);
+  return { inline_keyboard: rows };
+}
+function adminKb(id) {
+  return { inline_keyboard: [
+    [{ text: "✅ Qabul",          callback_data: `s_${id}_accepted`  },
+     { text: "🍳 Tayyorlanmoqda", callback_data: `s_${id}_cooking`   }],
+    [{ text: "🚀 Yetkazildi",     callback_data: `s_${id}_delivered` },
+     { text: "❌ Bekor",           callback_data: `s_${id}_cancelled` }],
+  ]};
 }
 
-// ── User saver ──────────────────────────────────────────────
 async function saveUser(msg) {
   try {
     await User.findOneAndUpdate(
       { userId: msg.chat.id },
-      {
-        userId: msg.chat.id,
-        firstName: msg.chat.first_name,
-        username: msg.chat.username,
-      },
-      { upsert: true },
+      { userId: msg.chat.id, firstName: msg.chat.first_name, username: msg.chat.username },
+      { upsert: true }
     );
   } catch {}
 }
 
-// ══════════════════════════════════════════════════════════
-//  BOT HANDLERS
-// ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════
+//  WEBHOOK
+// ══════════════════════════════════════════
+if (isProduction) {
+  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+  app.post(`/bot${BOT_TOKEN}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  });
+  console.log("✅ Webhook rejimida ishlayapti (tez!)");
+} else {
+  console.log("⚡ Polling rejimida ishlayapti");
+}
 
-// /start
+// ══════════════════════════════════════════
+//  BOT — /start
+// ══════════════════════════════════════════
 bot.onText(/\/start/, async (msg) => {
-  const id = msg.chat.id;
-  const name = msg.chat.first_name || "Mehmon";
+  const id = msg.chat.id, name = msg.chat.first_name || "Mehmon";
   await saveUser(msg);
-
-  const [userCount, orderCount, lastOrder] = await Promise.all([
+  const [userCount, lastOrder] = await Promise.all([
     User.countDocuments(),
-    Order.countDocuments({ userId: id }),
     Order.findOne({ userId: id }).sort({ createdAt: -1 }),
   ]);
-
-  let text = `🍔 *Holland Fast Food*\n\nAssalomu alaykum, *${name}*! 👋\n\n`;
+  let text = `🍔 *Holland Fast Food*\n\nAssalomu alaykum, *${name}*! Xush kelibsiz 👋\n\n`;
   text += `┌ ⚡ Yetkazib berish: *10–15 daqiqa*\n`;
   text += `├ ✅ Mahsulot: *100% Halol*\n`;
   text += `├ 🔥 Taom: *Har doim issiq*\n`;
   text += `└ 👥 Mijozlar: *${userCount} ta*\n\n`;
-
-  if (orderCount > 0 && lastOrder) {
+  if (lastOrder) {
     text += `📦 *So'nggi buyurtma:*\n`;
-    text += `#${lastOrder._id.toString().slice(-6).toUpperCase()} — ${STATUS[lastOrder.status]}\n`;
-    text += `💰 ${fmt(lastOrder.total)} so'm\n\n`;
+    text += `#${lastOrder._id.toString().slice(-6).toUpperCase()} — ${STATUS[lastOrder.status]}\n\n`;
   }
-
-  text += `🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇`;
-
+  text += `👇 Quyidagi tugmani bosib buyurtma bering!`;
   await bot.sendMessage(id, text, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
         [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-        [
-          { text: "📦 Buyurtmalarim", callback_data: "my_orders" },
-          { text: "📞 Bog'lanish", callback_data: "contact" },
-        ],
+        [{ text: "📋 Menu ko'rish", callback_data: "show_menu" },
+         { text: "📦 Buyurtmalarim", callback_data: "my_orders" }],
       ],
     },
   });
-  await bot.sendMessage(id, "Yoki pastdagi tugmalardan foydalaning 👇", {
-    reply_markup: mainKb(),
-  });
+  await bot.sendMessage(id, "Pastdagi tugmalardan ham foydalanishingiz mumkin 👇", { reply_markup: mainKb() });
 });
 
-// /admin
+// ══════════════════════════════════════════
+//  BOT — /admin
+// ══════════════════════════════════════════
 bot.onText(/\/admin/, async (msg) => {
   if (msg.chat.id !== ADMIN_ID) return;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const [userCount, orderCount, todayOrders, pending, todaySumArr] =
-    await Promise.all([
-      User.countDocuments(),
-      Order.countDocuments(),
-      Order.countDocuments({ createdAt: { $gte: todayStart } }),
-      Order.countDocuments({ status: { $in: ["new", "accepted", "cooking"] } }),
-      Order.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: todayStart },
-            status: { $ne: "cancelled" },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$total" } } },
-      ]),
-    ]);
-  const adminUrl = WEBHOOK_URL
-    ? `${WEBHOOK_URL}/admin`
-    : "http://localhost:3000/admin";
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const [users, totalOrders, todayOrders, pending, todaySumArr] = await Promise.all([
+    User.countDocuments(),
+    Order.countDocuments(),
+    Order.countDocuments({ createdAt: { $gte: todayStart } }),
+    Order.countDocuments({ status: { $in: ["new","accepted","cooking"] } }),
+    Order.aggregate([{ $match: { createdAt:{ $gte: todayStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
+  ]);
   let text = `📊 *Holland Admin Panel*\n\n`;
-  text += `👥 Foydalanuvchilar: *${userCount}*\n`;
-  text += `📦 Jami buyurtmalar: *${orderCount}*\n`;
+  text += `👥 Foydalanuvchilar: *${users}*\n`;
+  text += `📦 Jami buyurtmalar: *${totalOrders}*\n`;
   text += `📅 Bugungi buyurtmalar: *${todayOrders}*\n`;
   text += `⏳ Jarayondagi: *${pending}*\n`;
   text += `💰 Bugungi tushum: *${fmt(todaySumArr[0]?.total || 0)} so'm*\n\n`;
-  text += `🌐 [Admin panelni ochish](${adminUrl})`;
+  text += `🌐 [Admin panelni ochish](${WEBHOOK_URL}/admin?pass=${ADMIN_PASS})`;
   await bot.sendMessage(ADMIN_ID, text, { parse_mode: "Markdown" });
 });
 
-// Oddiy xabarlar
-bot.on("message", async (msg) => {
-  if (msg.text?.startsWith("/")) return;
-  if (msg.web_app_data) return;
-  await saveUser(msg);
-
-  const id = msg.chat.id;
-  const text = msg.text || "";
-
-  if (text === "📦 Buyurtmalarim") {
-    const orders = await Order.find({ userId: id })
-      .sort({ createdAt: -1 })
-      .limit(5);
-    if (!orders.length) {
-      return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-          ],
-        },
-      });
-    }
-    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
-    orders.forEach((o) => {
-      txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
-      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
-      txt += `   📅 ${new Date(o.createdAt).toLocaleDateString("uz-UZ")}\n\n`;
-    });
-    return bot.sendMessage(id, txt, {
-      parse_mode: "Markdown",
-      reply_markup: mainKb(),
-    });
-  }
-
-  if (text === "ℹ️ Biz haqimizda") {
-    return bot.sendMessage(
-      id,
-      `🏪 *Holland Fast Food*\n\n📍 G'alaba ko'chasi 1a, Namangan\n⏰ 11:00 – 01:00\n📞 +998 90 699 95 95\n\n✅ 100% Halol mahsulot\n🔥 Har doim issiq`,
-      { parse_mode: "Markdown", reply_markup: mainKb() },
-    );
-  }
-
-  if (text === "📞 Bog'lanish") {
-    return bot.sendMessage(
-      id,
-      `📞 *Bog'lanish:*\n\n📱 +998 90 699 95 95\n💬 @Holland_fries\n🌐 holland-namangan.netlify.app`,
-      { parse_mode: "Markdown", reply_markup: mainKb() },
-    );
-  }
-
-  return bot.sendMessage(
-    id,
-    "Buyurtma berish uchun quyidagi tugmani bosing 👇",
+// ══════════════════════════════════════════
+//  BOT — /hisobot (Excel)
+// ══════════════════════════════════════════
+bot.onText(/\/hisobot/, async (msg) => {
+  if (msg.chat.id !== ADMIN_ID) return;
+  const month = new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" });
+  await bot.sendMessage(ADMIN_ID,
+    `📊 *Hisobot — Holland Fast Food*\n\nQaysi davrni yuklab olmoqchisiz? 👇`,
     {
+      parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
+          [{ text: "☀️ Bugungi hisobot",  callback_data: "report_today"   }],
+          [{ text: "📅 Haftalik hisobot",  callback_data: "report_weekly"  }],
+          [{ text: `📆 Oylik (${month})`, callback_data: "report_monthly" }],
         ],
       },
-    },
+    }
   );
 });
 
-// Callback query (status o'zgartirish)
-bot.on("callback_query", async (q) => {
-  if (data.startsWith("report_") && id === ADMIN_ID) {
-    await bot.answerCallbackQuery(q.id, {
-      text: "⏳ Hisobot tayyorlanmoqda...",
-    });
+// ══════════════════════════════════════════
+//  BOT — text messages
+// ══════════════════════════════════════════
+bot.on("message", async (msg) => {
+  if (msg.text?.startsWith("/") || msg.web_app_data) return;
+  await saveUser(msg);
+  const id = msg.chat.id, text = msg.text || "";
 
-    let from = new Date(),
-      title = "",
-      fname = "";
+  if (text === "📋 Menu ko'rish") {
+    return bot.sendMessage(id, `🍽 *Holland Fast Food Menu*\n\nKategoriyani tanlang:`, {
+      parse_mode: "Markdown", reply_markup: menuKb(),
+    });
+  }
+  if (text === "📦 Buyurtmalarim") {
+    const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
+    if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
+      reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] }
+    });
+    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
+    orders.forEach(o => {
+      txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n`;
+      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
+      txt += `   📅 ${o.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
+    });
+    return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
+  }
+  if (text === "ℹ️ Biz haqimizda") return bot.sendMessage(id,
+    `🏪 *Holland Fast Food*\n\n📍 G'alaba ko'chasi 1a, Namangan\n⏰ 11:00 – 01:00\n📞 +998 90 699 95 95\n\n✅ 100% Halol mahsulot\n🔥 Har buyurtma yangi tayyorlanadi`,
+    { parse_mode: "Markdown", reply_markup: mainKb() }
+  );
+  if (text === "📞 Bog'lanish") return bot.sendMessage(id,
+    `📞 *Bog'lanish:*\n\n📱 +998 90 699 95 95\n💬 @Holland_fries\n🌐 holland-namangan.netlify.app`,
+    { parse_mode: "Markdown", reply_markup: mainKb() }
+  );
+  return bot.sendMessage(id, "Buyurtma berish uchun quyidagi tugmani bosing 👇", {
+    reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] },
+  });
+});
+
+// ══════════════════════════════════════════
+//  BOT — callback queries
+// ══════════════════════════════════════════
+bot.on("callback_query", async (q) => {
+  const id = q.message.chat.id, data = q.data;
+  await bot.answerCallbackQuery(q.id);
+
+  // ── Excel hisobot ──
+  if (data.startsWith("report_") && id === ADMIN_ID) {
+    let from = new Date(), title = "", fname = "";
 
     if (data === "report_today") {
       from.setHours(0, 0, 0, 0);
       title = `Bugungi — ${from.toLocaleDateString("uz-UZ")}`;
-      fname = `Holland_bugun_${from.toISOString().slice(0, 10)}.xlsx`;
+      fname = `Holland_bugun_${from.toISOString().slice(0,10)}.xlsx`;
     } else if (data === "report_weekly") {
-      from.setDate(from.getDate() - 7);
-      from.setHours(0, 0, 0, 0);
+      from.setDate(from.getDate() - 7); from.setHours(0, 0, 0, 0);
       title = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
-      fname = `Holland_haftalik_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      fname = `Holland_haftalik_${new Date().toISOString().slice(0,10)}.xlsx`;
     } else if (data === "report_monthly") {
-      from.setDate(1);
-      from.setHours(0, 0, 0, 0);
+      from.setDate(1); from.setHours(0, 0, 0, 0);
       title = `Oylik — ${new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" })}`;
-      fname = `Holland_oylik_${new Date().toISOString().slice(0, 7)}.xlsx`;
+      fname = `Holland_oylik_${new Date().toISOString().slice(0,7)}.xlsx`;
     }
 
-    const orders = await Order.find({ createdAt: { $gte: from } }).sort({
-      createdAt: -1,
-    });
-    const delivered = orders.filter((o) => o.status === "delivered");
-    const cancelled = orders.filter((o) => o.status === "cancelled");
-    const totalSum = delivered.reduce((s, o) => s + (o.total || 0), 0);
+    const orders    = await Order.find({ createdAt: { $gte: from } }).sort({ createdAt: -1 });
+    const delivered = orders.filter(o => o.status === "delivered");
+    const cancelled = orders.filter(o => o.status === "cancelled");
+    const totalSum  = delivered.reduce((s, o) => s + (o.total || 0), 0);
 
-    if (!orders.length) {
-      return bot.sendMessage(ADMIN_ID, "📭 Bu davrda buyurtma topilmadi.");
-    }
+    if (!orders.length) return bot.sendMessage(ADMIN_ID, "📭 Bu davrda buyurtma topilmadi.");
 
-    // Matnli xulosa
     let txt = `📊 *${title}*\n\n`;
     txt += `📦 Jami buyurtma: *${orders.length}*\n`;
     txt += `✅ Yetkazilgan: *${delivered.length}*\n`;
     txt += `❌ Bekor qilingan: *${cancelled.length}*\n`;
     txt += `⏳ Jarayondagi: *${orders.length - delivered.length - cancelled.length}*\n\n`;
-    txt += `💰 Jami tushum: *${new Intl.NumberFormat("uz-UZ").format(totalSum)} so'm*\n`;
-    txt += `📈 O'rtacha check: *${new Intl.NumberFormat("uz-UZ").format(delivered.length ? Math.round(totalSum / delivered.length) : 0)} so'm*`;
+    txt += `💰 Jami tushum: *${fmt(totalSum)} so'm*\n`;
+    txt += `📈 O'rtacha check: *${fmt(delivered.length ? Math.round(totalSum / delivered.length) : 0)} so'm*`;
 
     await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "Markdown" });
 
-    // Excel fayl yuborish
     const buf = getReportBuffer(orders, data.replace("report_", ""), title);
     await bot.sendDocument(
       ADMIN_ID,
       Buffer.from(buf),
-      {
-        caption: `📎 ${fname}\n\n5 ta varaq:\n📊 Xulosa\n📦 Buyurtmalar\n🍟 Mahsulotlar\n📅 Kunlik\n👥 Mijozlar`,
-      },
-      {
-        filename: fname,
-        contentType:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      },
+      { caption: `📎 ${fname}\n\n5 ta varaq:\n📊 Xulosa\n📦 Buyurtmalar\n🍟 Mahsulotlar\n📅 Kunlik\n👥 Mijozlar` },
+      { filename: fname, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
     );
     return;
   }
 
-  const id = q.message.chat.id;
-  const data = q.data;
-  await bot.answerCallbackQuery(q.id);
-
-  // Admin: buyurtma statusini o'zgartirish
+  // ── Admin: holat yangilash ──
   if (data.startsWith("s_") && id === ADMIN_ID) {
-    const parts = data.split("_");
-    const oid = parts[1];
-    const status = parts[2];
+    const [, oid, status] = data.split("_");
     const order = await Order.findByIdAndUpdate(oid, { status }, { new: true });
     if (!order) return;
-    await Promise.all([
-      bot.editMessageReplyMarkup(adminKb(oid), {
-        chat_id: ADMIN_ID,
-        message_id: q.message.message_id,
-      }),
-      bot.sendMessage(
-        ADMIN_ID,
-        `✅ *#${oid.slice(-6).toUpperCase()}* → *${STATUS[status]}*`,
-        { parse_mode: "Markdown" },
-      ),
-    ]);
-    sendToUser(order.userId, "order_update", {
-      orderId: oid,
-      status,
-      statusLabel: STATUS[status],
-    });
+    await bot.editMessageReplyMarkup(adminKb(oid), { chat_id: ADMIN_ID, message_id: q.message.message_id });
+    await bot.sendMessage(ADMIN_ID, `✅ *#${oid.slice(-6).toUpperCase()}* → *${STATUS[status]}*`, { parse_mode: "Markdown" });
+    sendToUser(order.userId, "order_update", { orderId: oid, status, statusLabel: STATUS[status] });
     sendToAdmin("order_updated", { orderId: oid, status });
+    try { await bot.sendMessage(order.userId, `🔔 *Buyurtma #${oid.slice(-6).toUpperCase()}*\n\nHolat: *${STATUS[status]}*\n\nRahmat! 🙏`, { parse_mode: "Markdown" }); } catch {}
+    return;
+  }
+
+  // ── Menu ──
+  if (data === "show_menu") {
+    await bot.editMessageText(`🍽 *Holland Fast Food Menu*\n\nKategoriyani tanlang:`, {
+      chat_id: id, message_id: q.message.message_id,
+      parse_mode: "Markdown", reply_markup: menuKb(),
+    });
+    return;
+  }
+
+  if (data.startsWith("cat_")) {
+    const catId = data.replace("cat_", "");
+    const cat = CATEGORIES.find(c => c.id === catId);
+    const count = MENU.filter(m => m.cat === catId).length;
+    await bot.editMessageText(
+      `${cat.emoji} *${cat.label}*\n${cat.desc}\n\n📦 ${count} ta mahsulot mavjud.\nTanlang:`,
+      { chat_id: id, message_id: q.message.message_id, parse_mode: "Markdown", reply_markup: catProductsKb(catId, 0) }
+    );
+    return;
+  }
+
+  if (data.startsWith("page_")) {
+    const [, catId, pageStr] = data.split("_");
+    await bot.editMessageReplyMarkup(catProductsKb(catId, Number(pageStr)), {
+      chat_id: id, message_id: q.message.message_id,
+    });
+    return;
+  }
+
+  if (data.startsWith("prod_")) {
+    const prodId = data.replace("prod_", "");
+    const prod = MENU.find(m => m.id === prodId);
+    if (!prod) return;
+    const cat = CATEGORIES.find(c => c.id === prod.cat);
+    const caption = `${cat.emoji} *${prod.name}*\n\n📝 ${prod.desc}\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
     try {
-      await bot.sendMessage(
-        order.userId,
-        `🔔 *Buyurtma #${oid.slice(-6).toUpperCase()}*\n\nHolat: *${STATUS[status]}*\n\nRahmat! 🙏`,
-        { parse_mode: "Markdown" },
-      );
-    } catch {}
+      await bot.sendPhoto(id, `${IMG_BASE}/${prod.img}`, {
+        caption, parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [
+          [{ text: "🛒 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
+          [{ text: "🔙 Menuga qaytish", callback_data: `cat_${prod.cat}` }],
+        ]},
+      });
+    } catch {
+      await bot.sendMessage(id, caption, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: [
+          [{ text: "🛒 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
+          [{ text: "🔙 Menuga qaytish", callback_data: `cat_${prod.cat}` }],
+        ]},
+      });
+    }
     return;
   }
 
   if (data === "my_orders") {
-    const orders = await Order.find({ userId: id })
-      .sort({ createdAt: -1 })
-      .limit(5);
-    if (!orders.length)
-      return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
-        reply_markup: mainKb(),
-      });
+    const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
+    if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainKb() });
     let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
-    orders.forEach((o) => {
-      txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`;
-    });
-    return bot.sendMessage(id, txt, {
-      parse_mode: "Markdown",
-      reply_markup: mainKb(),
-    });
-  }
-
-  if (data === "contact") {
-    return bot.sendMessage(
-      id,
-      `📞 *Bog'lanish:*\n\n📱 +998 90 699 95 95\n💬 @Holland_fries`,
-      { parse_mode: "Markdown", reply_markup: mainKb() },
-    );
+    orders.forEach(o => { txt += `*#${o._id.toString().slice(-6).toUpperCase()}*\n└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`; });
+    return bot.sendMessage(id, txt, { parse_mode: "Markdown", reply_markup: mainKb() });
   }
 });
 
-// ══════════════════════════════════════════════════════════
-//  API ROUTES
-// ══════════════════════════════════════════════════════════
-
-function validateOrder({ name, phone, address, items }) {
-  if (!name || typeof name !== "string" || name.trim().length < 2)
-    return "Ism noto'g'ri (kamida 2 harf)";
-  if (!phone || typeof phone !== "string") return "Telefon raqam kiritilmagan";
-  const cleaned = phone.replace(/[\s\-\(\)]/g, "");
-  if (!/^(\+998\d{9}|998\d{9}|\d{9})$/.test(cleaned))
-    return "Telefon raqam noto'g'ri format (+998 XX XXX XX XX)";
-  if (!address || typeof address !== "string" || address.trim().length < 3)
-    return "Manzil noto'g'ri (kamida 3 belgi)";
-  if (!Array.isArray(items) || items.length === 0) return "Savat bo'sh";
-  if (items.length > 50) return "Savatta juda ko'p mahsulot";
-  return null;
-}
-
-// Yangi buyurtma
+// ══════════════════════════════════════════
+//  API ROUTES — Orders
+// ══════════════════════════════════════════
 app.post("/api/orders", async (req, res) => {
   try {
-    const { userId, name, phone, address, note, gps, items, total } = req.body;
-    const validErr = validateOrder({ name, phone, address, items });
-    if (validErr) return res.json({ success: false, error: validErr });
-
-    const order = await Order.create({
-      userId,
-      name: name.trim(),
-      phone: phone.trim(),
-      address: address.trim(),
-      note: note || "",
-      gpsLat: gps?.lat || null,
-      gpsLng: gps?.lng || null,
-      items,
-      total,
-    });
-
+    const { userId, name, phone, address, note, gps, items, total, source } = req.body;
+    if (!name || !phone || !address || !items?.length) return res.json({ success: false, error: "Ma'lumotlar to'liq emas" });
+    const order = await Order.create({ userId: userId || 0, name, phone, address, note: note||"", gpsLat: gps?.lat||null, gpsLng: gps?.lng||null, items, total, source: source || "miniapp" });
     broadcastStats();
-
     if (ADMIN_ID) {
-      let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}*\n\n`;
+      const sourceLabel = { website: "🌐 Sayt", miniapp: "📱 Mini App", bot: "🤖 Bot" }[order.source] || "📦";
+      let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}* ${sourceLabel}\n\n`;
       txt += `👤 ${order.name}\n📞 ${order.phone}\n📍 ${order.address}\n`;
-      if (order.gpsLat)
-        txt += `🗺 [Xaritada](https://maps.google.com/?q=${order.gpsLat},${order.gpsLng})\n`;
+      if (order.gpsLat) txt += `🗺 [Xaritada](https://maps.google.com/?q=${order.gpsLat},${order.gpsLng})\n`;
       if (order.note) txt += `💬 ${order.note}\n`;
       txt += `\n📦 *Tarkibi:*\n`;
-      order.items.forEach((i) => {
-        txt += `• ${i.name} × ${i.qty} = ${fmt(i.price * i.qty)} so'm\n`;
-      });
+      order.items.forEach(i => { txt += `• ${i.name} × ${i.qty} = ${fmt(i.price*i.qty)} so'm\n`; });
       txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
-      await bot.sendMessage(ADMIN_ID, txt, {
-        parse_mode: "Markdown",
-        reply_markup: adminKb(order._id.toString()),
-      });
+      await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "Markdown", reply_markup: adminKb(order._id.toString()) });
     }
-
-    sendToUser(userId, "new_order", {
-      orderId: order._id.toString(),
-      status: "new",
-      total: order.total,
-    });
+    if (userId) sendToUser(userId, "new_order", { orderId: order._id.toString(), status: "new", total: order.total, items: order.items });
     sendToAdmin("new_order", { order: { ...order.toObject(), id: order._id } });
     res.json({ success: true, orderId: order._id });
-  } catch (e) {
-    log.error("/api/orders:", e.message);
-    res.json({ success: false, error: "Server xatosi" });
-  }
-});
-
-// SSE: foydalanuvchi stream
-app.get("/api/stream/:userId", (req, res) => {
-  const userId = Number(req.params.userId);
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-  res.write(`event: connected\ndata: {"ok":true}\n\n`);
-  const ping = setInterval(() => {
-    try {
-      res.write(": ping\n\n");
-    } catch {
-      clearInterval(ping);
-    }
-  }, 25000);
-  addClient(userId, res);
-  req.on("close", () => {
-    clearInterval(ping);
-    removeClient(userId, res);
-  });
+  } catch (e) { console.error(e); res.json({ success: false, error: e.message }); }
 });
 
 app.get("/api/orders/user/:uid", async (req, res) => {
-  try {
-    res.json(
-      await Order.find({ userId: Number(req.params.uid) })
-        .sort({ createdAt: -1 })
-        .limit(30),
-    );
-  } catch {
-    res.json([]);
-  }
+  try { res.json(await Order.find({ userId: Number(req.params.uid) }).sort({ createdAt: -1 }).limit(30)); }
+  catch { res.json([]); }
 });
 
-// Admin API (middleware bilan)
-app.use("/api/admin", adminAuth);
-app.get("/api/admin/report/weekly", async (req, res) => {
-  if (
-    req.query.pass !== ADMIN_PASS &&
-    req.headers["x-admin-pass"] !== ADMIN_PASS
-  )
-    return res.status(401).json({ error: "Ruxsat yo'q" });
-  try {
-    const from = new Date();
-    from.setDate(from.getDate() - 7);
-    from.setHours(0, 0, 0, 0);
-    const orders = await Order.find({ createdAt: { $gte: from } }).sort({
-      createdAt: -1,
-    });
-    const title = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
-    const buf = getReportBuffer(orders, "weekly", title);
-    const fname = `Holland_haftalik_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+app.get("/api/stats", async (req, res) => {
+  try { res.json({ users: await User.countDocuments(), orders: await Order.countDocuments() }); }
+  catch { res.json({ users: 0, orders: 0 }); }
 });
 
-// Oylik hisobot
-app.get("/api/admin/report/monthly", async (req, res) => {
-  if (
-    req.query.pass !== ADMIN_PASS &&
-    req.headers["x-admin-pass"] !== ADMIN_PASS
-  )
-    return res.status(401).json({ error: "Ruxsat yo'q" });
-  try {
-    const from = new Date();
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    const orders = await Order.find({ createdAt: { $gte: from } }).sort({
-      createdAt: -1,
-    });
-    const title = `Oylik — ${new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" })}`;
-    const buf = getReportBuffer(orders, "monthly", title);
-    const fname = `Holland_oylik_${new Date().toISOString().slice(0, 7)}.xlsx`;
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Ixtiyoriy sana oralig'i
-app.get("/api/admin/report/custom", async (req, res) => {
-  if (
-    req.query.pass !== ADMIN_PASS &&
-    req.headers["x-admin-pass"] !== ADMIN_PASS
-  )
-    return res.status(401).json({ error: "Ruxsat yo'q" });
-  try {
-    const { from: fromStr, to: toStr } = req.query;
-    const from = fromStr
-      ? new Date(fromStr)
-      : new Date(Date.now() - 30 * 86400000);
-    const to = toStr ? new Date(toStr) : new Date();
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-    const orders = await Order.find({
-      createdAt: { $gte: from, $lte: to },
-    }).sort({ createdAt: -1 });
-    const title = `${from.toLocaleDateString("uz-UZ")} — ${to.toLocaleDateString("uz-UZ")}`;
-    const buf = getReportBuffer(orders, "custom", title);
-    const fname = `Holland_hisobot_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}.xlsx`;
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ══════════════════════════════════════════════════════════
-//  BOT /hisobot KOMANDASI — bot handlers ichiga qo'shing
-// ══════════════════════════════════════════════════════════
-bot.onText(/\/hisobot/, async (msg) => {
-  if (msg.chat.id !== ADMIN_ID) return;
-  await bot.sendMessage(
-    ADMIN_ID,
-    `📊 *Hisobot turini tanlang:*\n\nExcel formatda yuklab olish uchun tanlang 👇`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📅 Haftalik hisobot", callback_data: "report_weekly" }],
-          [{ text: "📆 Oylik hisobot", callback_data: "report_monthly" }],
-          [{ text: "📊 Bugungi hisobot", callback_data: "report_today" }],
-        ],
-      },
-    },
-  );
+// ══════════════════════════════════════════
+//  ADMIN API — auth middleware
+// ══════════════════════════════════════════
+app.use("/api/admin", (req, res, next) => {
+  if (req.query.pass === ADMIN_PASS || req.headers["x-admin-pass"] === ADMIN_PASS) return next();
+  res.status(401).json({ error: "Ruxsat yo'q" });
 });
 
 app.get("/api/admin/orders", async (req, res) => {
@@ -713,147 +542,133 @@ app.get("/api/admin/orders", async (req, res) => {
     const { status, limit = 50, skip = 0 } = req.query;
     const filter = status && status !== "all" ? { status } : {};
     const [orders, total] = await Promise.all([
-      Order.find(filter)
-        .sort({ createdAt: -1 })
-        .limit(Number(limit))
-        .skip(Number(skip)),
+      Order.find(filter).sort({ createdAt: -1 }).limit(Number(limit)).skip(Number(skip)),
       Order.countDocuments(filter),
     ]);
     res.json({ orders, total });
-  } catch {
-    res.json({ orders: [], total: 0 });
-  }
+  } catch { res.json({ orders: [], total: 0 }); }
 });
 
 app.patch("/api/admin/orders/:id", async (req, res) => {
   try {
     const { status } = req.body;
-    const allowed = ["new", "accepted", "cooking", "delivered", "cancelled"];
-    if (!allowed.includes(status))
-      return res.json({ success: false, error: "Noto'g'ri status" });
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true },
-    );
+    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
     if (!order) return res.json({ success: false });
-    sendToUser(order.userId, "order_update", {
-      orderId: req.params.id,
-      status,
-      statusLabel: STATUS[status],
-    });
+    sendToUser(order.userId, "order_update", { orderId: req.params.id, status, statusLabel: STATUS[status] });
     sendToAdmin("order_updated", { orderId: req.params.id, status });
-    try {
-      await bot.sendMessage(
-        order.userId,
-        `🔔 *Buyurtma holati:*\n${STATUS[status]}`,
-        { parse_mode: "Markdown" },
-      );
-    } catch {}
+    try { await bot.sendMessage(order.userId, `🔔 *Buyurtma holati:*\n${STATUS[status]}`, { parse_mode: "Markdown" }); } catch {}
     res.json({ success: true, order });
-  } catch (e) {
-    log.error("PATCH order:", e.message);
-    res.json({ success: false, error: e.message });
-  }
+  } catch (e) { res.json({ success: false, error: e.message }); }
 });
 
 app.get("/api/admin/stats", async (req, res) => {
   try {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 7);
-    const [
-      users,
-      totalOrders,
-      todayOrders,
-      weekOrders,
-      pending,
-      todaySumArr,
-      weekSumArr,
-      statusCounts,
-    ] = await Promise.all([
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const weekStart  = new Date(); weekStart.setDate(weekStart.getDate()-7);
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+
+    const [users, totalOrders, todayOrders, weekOrders, monthOrders, pending,
+           todaySumArr, weekSumArr, monthSumArr, statusCounts, daily] = await Promise.all([
       User.countDocuments(),
       Order.countDocuments(),
       Order.countDocuments({ createdAt: { $gte: todayStart } }),
       Order.countDocuments({ createdAt: { $gte: weekStart } }),
-      Order.countDocuments({ status: { $in: ["new", "accepted", "cooking"] } }),
+      Order.countDocuments({ createdAt: { $gte: monthStart } }),
+      Order.countDocuments({ status: { $in: ["new","accepted","cooking"] } }),
+      Order.aggregate([{ $match: { createdAt:{ $gte: todayStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
+      Order.aggregate([{ $match: { createdAt:{ $gte: weekStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
+      Order.aggregate([{ $match: { createdAt:{ $gte: monthStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
+      Order.aggregate([{ $group:{ _id:"$status", count:{ $sum:1 } } }]),
       Order.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: todayStart },
-            status: { $ne: "cancelled" },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$total" } } },
+        { $match: { createdAt:{ $gte: weekStart } } },
+        { $group:{ _id:{ $dateToString:{ format:"%Y-%m-%d", date:"$createdAt" } }, count:{ $sum:1 }, total:{ $sum:"$total" } } },
+        { $sort:{ _id:1 } }
       ]),
-      Order.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: weekStart },
-            status: { $ne: "cancelled" },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$total" } } },
-      ]),
-      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
     ]);
-    const daily = await Order.aggregate([
-      { $match: { createdAt: { $gte: weekStart } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-          count: { $sum: 1 },
-          total: { $sum: "$total" },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]);
+
     res.json({
-      users,
-      totalOrders,
-      todayOrders,
-      weekOrders,
-      pending,
+      users, totalOrders, todayOrders, weekOrders, monthOrders, pending,
       todaySum: todaySumArr[0]?.total || 0,
-      weekSum: weekSumArr[0]?.total || 0,
-      statusCounts,
-      daily,
+      weekSum:  weekSumArr[0]?.total  || 0,
+      monthSum: monthSumArr[0]?.total || 0,
+      statusCounts, daily,
     });
-  } catch (e) {
-    log.error("stats:", e.message);
-    res.json({ error: e.message });
-  }
+  } catch(e) { res.json({ error: e.message }); }
 });
 
-app.get("/api/stats", async (req, res) => {
+// ══════════════════════════════════════════
+//  ADMIN API — Excel hisobotlar
+// ══════════════════════════════════════════
+app.get("/api/admin/report/weekly", async (req, res) => {
   try {
-    res.json({
-      users: await User.countDocuments(),
-      orders: await Order.countDocuments(),
-    });
-  } catch {
-    res.json({ users: 0, orders: 0 });
-  }
+    const from = new Date(); from.setDate(from.getDate() - 7); from.setHours(0, 0, 0, 0);
+    const orders = await Order.find({ createdAt: { $gte: from } }).sort({ createdAt: -1 });
+    const title  = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
+    const buf    = getReportBuffer(orders, "weekly", title);
+    const fname  = `Holland_haftalik_${new Date().toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Admin panel
-app.get("/admin", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "admin.html")),
-);
+app.get("/api/admin/report/monthly", async (req, res) => {
+  try {
+    const from = new Date(); from.setDate(1); from.setHours(0, 0, 0, 0);
+    const orders = await Order.find({ createdAt: { $gte: from } }).sort({ createdAt: -1 });
+    const title  = `Oylik — ${new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" })}`;
+    const buf    = getReportBuffer(orders, "monthly", title);
+    const fname  = `Holland_oylik_${new Date().toISOString().slice(0,7)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-app.post("/api/admin/login", (req, res) => {
-  const { pass } = req.body;
-  if (pass !== ADMIN_PASS)
-    return res.status(401).json({ error: "Parol noto'g'ri" });
-  const token = crypto
-    .createHash("sha256")
-    .update(ADMIN_PASS)
-    .digest("hex")
-    .slice(0, 32);
-  res.json({ success: true, token });
+app.get("/api/admin/report/today", async (req, res) => {
+  try {
+    const from = new Date(); from.setHours(0, 0, 0, 0);
+    const orders = await Order.find({ createdAt: { $gte: from } }).sort({ createdAt: -1 });
+    const title  = `Bugungi — ${from.toLocaleDateString("uz-UZ")}`;
+    const buf    = getReportBuffer(orders, "today", title);
+    const fname  = `Holland_bugun_${from.toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/admin/report/custom", async (req, res) => {
+  try {
+    const { from: fromStr, to: toStr } = req.query;
+    const from = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 86400000);
+    const to   = toStr   ? new Date(toStr)   : new Date();
+    from.setHours(0, 0, 0, 0); to.setHours(23, 59, 59, 999);
+    const orders = await Order.find({ createdAt: { $gte: from, $lte: to } }).sort({ createdAt: -1 });
+    const title  = `${from.toLocaleDateString("uz-UZ")} — ${to.toLocaleDateString("uz-UZ")}`;
+    const buf    = getReportBuffer(orders, "custom", title);
+    const fname  = `Holland_hisobot_${from.toISOString().slice(0,10)}_${to.toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ══════════════════════════════════════════
+//  ADMIN PANEL (HTML)
+// ══════════════════════════════════════════
+app.get("/admin", (req, res) => {
+  if (req.query.pass !== ADMIN_PASS) {
+    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Holland Admin</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:sans-serif;background:#f3f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .box{background:#fff;padding:32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);width:320px}
+    h2{font-size:20px;margin-bottom:20px;color:#111}input{width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;margin-bottom:12px;outline:none}
+    button{width:100%;padding:14px;background:#E8342A;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}</style></head>
+    <body><div class="box"><h2>🍔 Holland Admin</h2>
+    <form method="get"><input type="password" name="pass" placeholder="Parol..." autofocus/><button type="submit">Kirish</button></form></div></body></html>`);
+  }
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
 app.get("/", (req, res) => res.json({ ok: true, service: "Holland API ✅" }));
-
-app.listen(PORT, () => log.start(`Holland API: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));
