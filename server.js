@@ -4,6 +4,7 @@ const cors        = require("cors");
 const mongoose    = require("mongoose");
 const TelegramBot = require("node-telegram-bot-api");
 const path        = require("path");
+const crypto      = require("crypto");
 const { getReportBuffer } = require("./reports");
 
 const app          = express();
@@ -104,6 +105,22 @@ const MENU = [
 
 function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n); }
 
+// ══════════════════════════════════════════
+//  ADMIN TOKEN — deterministik, sessiya saqlashga hojat yo'q
+// ══════════════════════════════════════════
+function computeAdminToken() {
+  return crypto.createHash("sha256").update(ADMIN_PASS + ":holland_secret").digest("hex");
+}
+function checkBearer(req) {
+  const auth = req.headers["authorization"] || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  return token === computeAdminToken();
+}
+function checkSseToken(req) {
+  const token = req.query.token || "";
+  return token === computeAdminToken().slice(0, 16);
+}
+
 const STATUS = {
   new:       "🆕 Yangi",
   accepted:  "✅ Qabul qilindi",
@@ -170,7 +187,7 @@ app.get("/api/stream/:userId", (req, res) => {
 });
 
 app.get("/api/admin/stream", (req, res) => {
-  if (req.query.pass !== ADMIN_PASS) return res.status(401).end();
+  if (!checkSseToken(req)) return res.status(401).end();
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection",    "keep-alive");
@@ -301,7 +318,7 @@ bot.onText(/\/admin/, async (msg) => {
   text += `📅 Bugungi buyurtmalar: *${todayOrders}*\n`;
   text += `⏳ Jarayondagi: *${pending}*\n`;
   text += `💰 Bugungi tushum: *${fmt(todaySumArr[0]?.total || 0)} so'm*\n\n`;
-  text += `🌐 [Admin panelni ochish](${WEBHOOK_URL}/admin?pass=${ADMIN_PASS})`;
+  text += `🌐 [Admin panelni ochish](${WEBHOOK_URL}/admin)`;
   await bot.sendMessage(ADMIN_ID, text, { parse_mode: "Markdown" });
 });
 
@@ -532,8 +549,19 @@ app.get("/api/stats", async (req, res) => {
 // ══════════════════════════════════════════
 //  ADMIN API — auth middleware
 // ══════════════════════════════════════════
+// ══════════════════════════════════════════
+//  ADMIN LOGIN — token qaytaradi
+// ══════════════════════════════════════════
+app.post("/api/admin/login", (req, res) => {
+  const { pass } = req.body;
+  if (pass === ADMIN_PASS) {
+    return res.json({ success: true, token: computeAdminToken() });
+  }
+  res.json({ success: false });
+});
+
 app.use("/api/admin", (req, res, next) => {
-  if (req.query.pass === ADMIN_PASS || req.headers["x-admin-pass"] === ADMIN_PASS) return next();
+  if (checkBearer(req) || req.query.pass === ADMIN_PASS || req.headers["x-admin-pass"] === ADMIN_PASS) return next();
   res.status(401).json({ error: "Ruxsat yo'q" });
 });
 
@@ -658,15 +686,6 @@ app.get("/api/admin/report/custom", async (req, res) => {
 //  ADMIN PANEL (HTML)
 // ══════════════════════════════════════════
 app.get("/admin", (req, res) => {
-  if (req.query.pass !== ADMIN_PASS) {
-    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Holland Admin</title>
-    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:sans-serif;background:#f3f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .box{background:#fff;padding:32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);width:320px}
-    h2{font-size:20px;margin-bottom:20px;color:#111}input{width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;margin-bottom:12px;outline:none}
-    button{width:100%;padding:14px;background:#E8342A;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}</style></head>
-    <body><div class="box"><h2>🍔 Holland Admin</h2>
-    <form method="get"><input type="password" name="pass" placeholder="Parol..." autofocus/><button type="submit">Kirish</button></form></div></body></html>`);
-  }
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 

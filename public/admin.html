@@ -22,7 +22,6 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 .live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* STATS */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
 .stat-card{background:var(--white);border-radius:14px;padding:18px;border:1px solid var(--border)}
 .stat-label{font-size:12px;font-weight:600;color:var(--mid);margin-bottom:8px}
@@ -30,7 +29,6 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 .stat-sub{font-size:12px;color:var(--soft);margin-top:4px}
 .stat-icon{font-size:20px;margin-bottom:8px}
 
-/* CHART */
 .chart-card{background:var(--white);border-radius:14px;padding:20px;border:1px solid var(--border);margin-bottom:24px}
 .chart-title{font-size:15px;font-weight:700;margin-bottom:16px}
 .bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px}
@@ -40,7 +38,6 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 .bar-label{font-size:10px;color:var(--soft);font-weight:500}
 .bar-val{font-size:10px;color:var(--mid);font-weight:600}
 
-/* ORDERS */
 .orders-card{background:var(--white);border-radius:14px;border:1px solid var(--border);overflow:hidden}
 .orders-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .orders-title{font-size:15px;font-weight:700}
@@ -60,6 +57,10 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 .order-items{font-size:12px;color:var(--mid);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .order-total{font-weight:700;color:var(--dark)}
 .order-date{font-size:12px;color:var(--soft)}
+.order-source{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.src-website{background:#dbeafe;color:#1e40af}
+.src-miniapp{background:#d1fae5;color:#065f46}
+.src-bot{background:#fef3c7;color:#92400e}
 .status-select{padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;font-family:inherit;outline:none;background:var(--white);transition:all .15s}
 .s-new      {border-color:#fbbf24;color:#92400e;background:#fef3c7}
 .s-accepted {border-color:#60a5fa;color:#1e40af;background:#dbeafe}
@@ -81,6 +82,17 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 .notif-body{font-size:12px;color:var(--mid)}
 .notif-close{position:absolute;top:10px;right:12px;cursor:pointer;color:var(--soft);font-size:16px}
 
+/* REPORTS PANEL */
+.report-card{background:var(--white);border-radius:14px;padding:20px;border:1px solid var(--border);text-align:center;cursor:pointer;transition:all .15s}
+.report-card:hover{border-color:var(--red);box-shadow:0 4px 16px rgba(232,52,42,.1)}
+.report-card .ric{font-size:32px;margin-bottom:8px}
+.report-card .rtitle{font-size:14px;font-weight:800;margin-bottom:4px}
+.report-card .rsub{font-size:12px;color:var(--soft)}
+.report-card .rbtn{margin-top:12px;padding:8px;background:var(--red);color:#fff;border-radius:8px;font-size:12px;font-weight:700}
+.report-card.loading .rbtn{opacity:.6}
+.date-input{padding:10px 12px;border:2px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px;outline:none;color:var(--dark);width:100%}
+.date-input:focus{border-color:var(--red)}
+
 @media(max-width:768px){
   .sidebar{width:60px;padding:16px 8px}
   .sidebar-logo{font-size:0}.nav-item span{display:none}
@@ -93,11 +105,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 </head>
 <body>
 
+<div id="app" style="display:none">
 <div class="sidebar">
   <div class="sidebar-logo">🍔 <span>Holland</span></div>
   <div class="nav-item active" onclick="showPanel('dashboard')"><span class="nav-icon">📊</span><span>Dashboard</span></div>
   <div class="nav-item" onclick="showPanel('orders')"><span class="nav-icon">📦</span><span>Buyurtmalar</span></div>
   <div class="nav-item" onclick="showPanel('stats')"><span class="nav-icon">📈</span><span>Statistika</span></div>
+  <div class="nav-item" onclick="showPanel('reports')"><span class="nav-icon">📥</span><span>Hisobotlar</span></div>
 </div>
 
 <div class="main">
@@ -159,10 +173,73 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
       <div id="status-bars"></div>
     </div>
   </div>
+
+  <!-- REPORTS -->
+  <div class="panel" id="panel-reports">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px" id="report-cards">
+      <div class="report-card" onclick="downloadReport('today',this)">
+        <div class="ric">☀️</div>
+        <div class="rtitle">Bugungi</div>
+        <div class="rsub" id="r-today-label">—</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+      <div class="report-card" onclick="downloadReport('weekly',this)">
+        <div class="ric">📅</div>
+        <div class="rtitle">Haftalik</div>
+        <div class="rsub">So'nggi 7 kun</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+      <div class="report-card" onclick="downloadReport('monthly',this)">
+        <div class="ric">📆</div>
+        <div class="rtitle">Oylik</div>
+        <div class="rsub" id="r-month-label">—</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">📋 Ixtiyoriy sana oralig'i</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:12px;font-weight:600;color:var(--mid);margin-bottom:6px">Boshlanish</div>
+          <input type="date" id="r-from" class="date-input"/>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:12px;font-weight:600;color:var(--mid);margin-bottom:6px">Tugash</div>
+          <input type="date" id="r-to" class="date-input"/>
+        </div>
+        <button onclick="downloadCustomReport(this)" style="padding:10px 20px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
+          📥 Excel yuklash
+        </button>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">📈 Tezkor ko'rinish</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Haftalik tushum</div>
+          <div style="font-size:20px;font-weight:800;color:var(--red)" id="r-week-sum">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Oylik tushum</div>
+          <div style="font-size:20px;font-weight:800;color:var(--red)" id="r-month-sum">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Haftalik buyurtmalar</div>
+          <div style="font-size:20px;font-weight:800" id="r-week-count">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Oylik buyurtmalar</div>
+          <div style="font-size:20px;font-weight:800" id="r-month-count">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 </div>
 
 <div class="toast" id="toast"><span id="toast-msg"></span></div>
-<div class="notification" id="notif">
 <div class="notification" id="notif">
   <div class="notif-close" onclick="closeNotif()">✕</div>
   <div class="notif-title" id="notif-title"></div>
@@ -170,28 +247,21 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
 </div>
 
 <script>
-// ✅ TUZATILDI: Parol URL da emas, localStorage da saqlanadi (xavfsizroq)
 const API = '';
 const STATUS_LABELS = {new:'🆕 Yangi',accepted:'✅ Qabul',cooking:'🍳 Tayyorlanmoqda',delivered:'🚀 Yetkazildi',cancelled:'❌ Bekor'};
 const STATUS_CLASS  = {new:'s-new',accepted:'s-accepted',cooking:'s-cooking',delivered:'s-delivered',cancelled:'s-cancelled'};
 const STATUS_OPTS   = ['new','accepted','cooking','delivered','cancelled'];
+const SOURCE_LABELS = {website:'🌐 Sayt',miniapp:'📱 App',bot:'🤖 Bot'};
+const SOURCE_CLASS  = {website:'src-website',miniapp:'src-miniapp',bot:'src-bot'};
 
 function fmt(n){ return new Intl.NumberFormat('uz-UZ').format(Math.round(n)); }
 function fmtDate(d){ return new Date(d).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 
-// ── AUTH — parol localStorage da, URL da emas ──────────────
+// ── AUTH ──
 let TOKEN = localStorage.getItem('admin_token') || '';
+function getHeaders(){ return { 'Content-Type':'application/json', 'Authorization': 'Bearer '+TOKEN }; }
+function getSseToken(){ return localStorage.getItem('admin_ssetoken') || ''; }
 
-function getHeaders(){
-  return { 'Content-Type':'application/json', 'Authorization': 'Bearer '+TOKEN };
-}
-
-// SSE uchun token (pass=sha256[:16]) — server ham shunday hisoblaydi
-function getSseToken(){
-  return localStorage.getItem('admin_ssetoken') || '';
-}
-
-// Login forma ko'rsatish
 function showLogin(errMsg){
   document.getElementById('app').style.display='none';
   const loginDiv = document.getElementById('login-screen');
@@ -208,15 +278,13 @@ async function doLogin(){
   if(!pass){ document.getElementById('login-err').textContent='Parol kiriting'; return; }
   try{
     const r = await fetch(`${API}/api/admin/login`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ pass })
     });
     const data = await r.json();
     if(!data.success){ document.getElementById('login-err').textContent='Parol noto\'g\'ri'; return; }
     TOKEN = data.token;
     localStorage.setItem('admin_token', TOKEN);
-    // SSE token: token ning birinchi 16 belgisi
     localStorage.setItem('admin_ssetoken', TOKEN.slice(0,16));
     hideLogin();
     init();
@@ -224,7 +292,6 @@ async function doLogin(){
     document.getElementById('login-err').textContent='Server bilan bog\'lanib bo\'lmadi';
   }
 }
-
 function doLogout(){
   TOKEN = '';
   localStorage.removeItem('admin_token');
@@ -234,18 +301,17 @@ function doLogout(){
 
 let allOrders=[], statsData={}, currentFilter='all';
 
-// ── PANELS ──
 function showPanel(name){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach((n,i)=>{
-    n.classList.toggle('active',['dashboard','orders','stats'][i]===name);
+    n.classList.toggle('active',['dashboard','orders','stats','reports'][i]===name);
   });
   document.getElementById('panel-'+name).classList.add('active');
-  document.getElementById('page-title').textContent={dashboard:'Dashboard',orders:'Buyurtmalar',stats:'Statistika'}[name];
+  document.getElementById('page-title').textContent={dashboard:'Dashboard',orders:'Buyurtmalar',stats:'Statistika',reports:'Hisobotlar'}[name];
   if(name==='orders') renderOrdersTable(allOrders, currentFilter);
+  if(name==='reports') loadReportStats();
 }
 
-// ── STATS ──
 async function loadStats(){
   try{
     const r = await fetch(`${API}/api/admin/stats`, { headers: getHeaders() });
@@ -300,7 +366,6 @@ function renderStatusBars(counts){
   }).join('');
 }
 
-// ── ORDERS ──
 async function loadOrders(filter='all'){
   try{
     const f=filter!=='all'?`&status=${filter}`:'';
@@ -318,11 +383,12 @@ function orderRowHTML(o, highlight=false){
   const shortId=id.slice(-6).toUpperCase();
   const items=(o.items||[]).map(i=>i.name+' ×'+i.qty).join(', ');
   const gpsLink=o.gpsLat?`<a class="map-link" href="https://maps.google.com/?q=${o.gpsLat},${o.gpsLng}" target="_blank">🗺</a> `:'';
+  const src = o.source || 'miniapp';
   return `<tr id="row-${id}" class="${highlight?'new-order':''}">
-    <td><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div></td>
+    <td><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div><span class="order-source ${SOURCE_CLASS[src]||'src-miniapp'}">${SOURCE_LABELS[src]||src}</span></td>
     <td><div class="order-customer">${o.name}</div><div class="order-phone">${o.phone}</div></td>
     <td><div class="order-items" title="${items}">${items}</div></td>
-    <td><div class="address-cell" title="${o.address}" onclick="copyAddr('${o.address.replace(/'/g,"\\'")}')">
+    <td><div class="address-cell" title="${o.address}" onclick="copyAddr('${(o.address||'').replace(/'/g,"\\'")}')">
       ${gpsLink}${o.address}</div></td>
     <td><div class="order-total">${fmt(o.total)} so'm</div></td>
     <td>
@@ -364,9 +430,7 @@ async function changeStatus(id, selectEl){
   selectEl.className='status-select '+STATUS_CLASS[status];
   try{
     await fetch(`${API}/api/admin/orders/${id}`,{
-      method:'PATCH',
-      headers: getHeaders(),
-      body: JSON.stringify({ status })
+      method:'PATCH', headers: getHeaders(), body: JSON.stringify({ status })
     });
     toast('✅ Holat yangilandi: '+STATUS_LABELS[status]);
     const row=document.getElementById('row-'+id);
@@ -379,7 +443,61 @@ function copyAddr(addr){
   navigator.clipboard.writeText(addr).then(()=>toast('📋 Manzil nusxa olindi'));
 }
 
-// ── REAL-TIME SSE ──
+// ── REPORTS — Bearer token bilan blob orqali yuklab olish ──
+async function triggerDownload(url, filename){
+  const r = await fetch(url, { headers: getHeaders() });
+  if(r.status===401){ showLogin('Sessiya tugadi. Qayta kiring.'); throw new Error('401'); }
+  if(!r.ok) throw new Error('Server xatosi');
+  const blob = await r.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(objUrl);
+}
+
+async function downloadReport(type, cardEl){
+  cardEl?.classList.add('loading');
+  try{
+    const fname = `Holland_${type}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    await triggerDownload(`${API}/api/admin/report/${type}`, fname);
+    toast('📥 Hisobot yuklandi');
+  } catch(e){ if(e.message!=='401') toast('❌ Yuklab bo\'lmadi'); }
+  finally { cardEl?.classList.remove('loading'); }
+}
+
+async function downloadCustomReport(btnEl){
+  const from = document.getElementById('r-from').value;
+  const to   = document.getElementById('r-to').value;
+  if(!from || !to){ toast('❌ Sanalarni kiriting'); return; }
+  btnEl.style.opacity='.6';
+  try{
+    const fname = `Holland_hisobot_${from}_${to}.xlsx`;
+    await triggerDownload(`${API}/api/admin/report/custom?from=${from}&to=${to}`, fname);
+    toast('📥 Hisobot yuklandi');
+  } catch(e){ if(e.message!=='401') toast('❌ Yuklab bo\'lmadi'); }
+  finally { btnEl.style.opacity='1'; }
+}
+
+async function loadReportStats(){
+  document.getElementById('r-month-label').textContent =
+    new Date().toLocaleString('uz-UZ', { month: 'long', year: 'numeric' });
+  document.getElementById('r-today-label').textContent = new Date().toLocaleDateString('uz-UZ');
+  const today = new Date().toISOString().slice(0,10);
+  const week  = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+  if(!document.getElementById('r-from').value) document.getElementById('r-from').value = week;
+  if(!document.getElementById('r-to').value)   document.getElementById('r-to').value   = today;
+  try{
+    const r = await fetch(`${API}/api/admin/stats`, { headers: getHeaders() });
+    const d = await r.json();
+    document.getElementById('r-week-sum').textContent   = fmt(d.weekSum||0)+' so\'m';
+    document.getElementById('r-month-sum').textContent  = fmt(d.monthSum||0)+' so\'m';
+    document.getElementById('r-week-count').textContent = d.weekOrders||0;
+    document.getElementById('r-month-count').textContent= d.monthOrders||0;
+  } catch {}
+}
+
+// ── SSE ──
 function connectSSE(){
   const sseToken = getSseToken();
   if(!sseToken) return;
@@ -407,7 +525,6 @@ function connectSSE(){
   sse.onerror=()=>setTimeout(connectSSE,5000);
 }
 
-// ── NOTIFICATION ──
 let notifTimer;
 function showNotif(title,body){
   document.getElementById('notif-title').textContent=title;
@@ -416,11 +533,10 @@ function showNotif(title,body){
   n.classList.add('show');
   clearTimeout(notifTimer);
   notifTimer=setTimeout(()=>n.classList.remove('show'),6000);
-  if(Notification.permission==='granted') new Notification(title,{body,icon:'/favicon.ico'});
+  if(Notification.permission==='granted') new Notification(title,{body});
 }
 function closeNotif(){ document.getElementById('notif').classList.remove('show'); }
 
-// ── TOAST ──
 let _tt;
 function toast(msg){
   const t=document.getElementById('toast');
@@ -429,7 +545,6 @@ function toast(msg){
   _tt=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-// ── INIT ──
 function init(){
   if(Notification.permission==='default') Notification.requestPermission();
   loadStats();
@@ -438,7 +553,6 @@ function init(){
   setInterval(()=>{ loadStats(); loadOrders(); }, 60000);
 }
 
-// Login screen HTML ni qo'shish
 document.body.insertAdjacentHTML('beforeend', `
 <div id="login-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:#f3f4f6;align-items:center;justify-content:center;">
   <div style="background:#fff;padding:36px;border-radius:18px;box-shadow:0 4px 30px rgba(0,0,0,.12);width:320px">
@@ -455,7 +569,6 @@ document.body.insertAdjacentHTML('beforeend', `
   </div>
 </div>`);
 
-// Logout tugmasini sidebar ga qo'shish
 const sidebar = document.querySelector('.sidebar');
 if(sidebar){
   sidebar.insertAdjacentHTML('beforeend',
@@ -464,15 +577,13 @@ if(sidebar){
     </div>`);
 }
 
-// Avval token tekshirish
 if(!TOKEN){
   showLogin();
 } else {
-  // Token ishlayaptimi tekshirish
   fetch(`${API}/api/admin/stats`, { headers: getHeaders() }).then(r=>{
     if(r.status===401){ showLogin(); }
-    else { init(); }
-  }).catch(()=>{ init(); });
+    else { hideLogin(); init(); }
+  }).catch(()=>{ hideLogin(); init(); });
 }
 </script>
 </body>
