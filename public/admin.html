@@ -336,12 +336,14 @@ function renderBarChart(daily){
   const el=document.getElementById('bar-chart');
   if(!daily.length){el.innerHTML='<div style="color:var(--soft);font-size:13px;padding:20px">Ma\'lumot yo\'q</div>';return;}
   const max=Math.max(...daily.map(d=>d.count),1);
-  el.innerHTML=daily.map(d=>{
-    const h=Math.max(Math.round((d.count/max)*100),4);
-    const date=d._id.slice(5);
-    return `<div class="bar-wrap">
-      <div class="bar-val">${d.count}</div>
-      <div class="bar" style="height:${h}px" title="${d._id}: ${d.count} buyurtma, ${fmt(d.total)} so'm"></div>
+  const single = daily.length === 1;
+  el.style.justifyContent = single ? 'center' : 'flex-start';
+  el.innerHTML = daily.map(d=>{
+    const h=Math.max(Math.round((d.count/max)*90),8);
+    const date=new Date(d._id).toLocaleDateString('uz-UZ',{day:'2-digit',month:'2-digit',weekday:'short'});
+    return `<div class="bar-wrap" style="${single?'max-width:120px':''}">
+      <div class="bar-val">${d.count} ta</div>
+      <div class="bar" style="height:${h}px;${single?'border-radius:10px;background:linear-gradient(180deg,#ff6b5e,#E8342A)':''}" title="${d._id}: ${d.count} buyurtma, ${fmt(d.total)} so'm"></div>
       <div class="bar-label">${date}</div>
     </div>`;
   }).join('');
