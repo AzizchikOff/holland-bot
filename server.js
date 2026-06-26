@@ -1,3 +1,10 @@
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("⚠️ Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("⚠️ Uncaught Exception:", error);
+});
+
 require("dotenv").config();
 const express     = require("express");
 const cors        = require("cors");
@@ -20,6 +27,9 @@ const isProduction = !!WEBHOOK_URL;
 const bot = isProduction
   ? new TelegramBot(BOT_TOKEN, { webHook: { port: false } })
   : new TelegramBot(BOT_TOKEN, { polling: true });
+
+bot.on("polling_error", (err) => console.error("🤖 Bot Polling error:", err.message));
+bot.on("error", (err) => console.error("🤖 Bot error:", err.message));
 
 app.use(cors());
 app.use(express.json());
@@ -68,7 +78,7 @@ const CATEGORIES = [
 
 const MENU = [
   { id:"1",  cat:"free",   name:"Free Holland",              price:19000,  img:"free-classik.jpg",     desc:"Klassik Holland fri — chip-chip, issiq" },
-  { id:"2",  cat:"free",   name:"Free Holland Big",          price:23000,  img:"free-big.jpg",         desc:"Katta porsiya — to'yimli va mazali" },
+  { id:"2",  cat:"free",   name:"Free Holland Big",          price:23000,  img:"free-classik.jpg",     desc:"Katta porsiya — to'yimli va mazali" },
   { id:"3",  cat:"free",   name:"Free Holland Special",      price:35000,  img:"special.jpg",          desc:"Maxsus sous bilan — eng mashhur tanlov" },
   { id:"4",  cat:"free",   name:"Loaded Fries",              price:32000,  img:"loaded.png",           desc:"Sous va toppinglar bilan to'ldirilgan fri" },
   { id:"5",  cat:"free",   name:"Loaded Fries & Sausage",    price:28000,  img:"Loaded fries.jpg",     desc:"Kolbasa va sous bilan fri" },
