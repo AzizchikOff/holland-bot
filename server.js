@@ -60,6 +60,7 @@ const OrderSchema = new mongoose.Schema({
   gpsLng:  Number,
   items:   Array,
   total:   Number,
+  paymentMethod: { type: String, default: "cash" }, // cash | card
   status:  { type: String, default: "new" },
   source:  { type: String, default: "miniapp" }, // miniapp | website | bot
 }, { timestamps: true });
@@ -525,14 +526,27 @@ bot.on("callback_query", async (q) => {
 // ══════════════════════════════════════════
 app.post("/api/orders", async (req, res) => {
   try {
-    const { userId, name, phone, address, note, gps, items, total, source } = req.body;
+    const { userId, name, phone, address, note, gps, items, total, paymentMethod, source } = req.body;
     if (!name || !phone || !address || !items?.length) return res.json({ success: false, error: "Ma'lumotlar to'liq emas" });
-    const order = await Order.create({ userId: userId || 0, name, phone, address, note: note||"", gpsLat: gps?.lat||null, gpsLng: gps?.lng||null, items, total, source: source || "miniapp" });
+    const order = await Order.create({
+      userId: userId || 0,
+      name,
+      phone,
+      address,
+      note: note||"",
+      gpsLat: gps?.lat||null,
+      gpsLng: gps?.lng||null,
+      items,
+      total,
+      paymentMethod: paymentMethod || "cash",
+      source: source || "miniapp"
+    });
     broadcastStats();
     if (ADMIN_ID) {
       const sourceLabel = { website: "🌐 Sayt", miniapp: "📱 Mini App", bot: "🤖 Bot" }[order.source] || "📦";
+      const payLabel = order.paymentMethod === "card" ? "💳 Karta" : "💵 Naqd";
       let txt = `🛎 *Yangi buyurtma #${order._id.toString().slice(-6).toUpperCase()}* ${sourceLabel}\n\n`;
-      txt += `👤 ${order.name}\n📞 ${order.phone}\n📍 ${order.address}\n`;
+      txt += `👤 ${order.name}\n📞 ${order.phone}\n📍 ${order.address}\n💳 To'lov: ${payLabel}\n`;
       if (order.gpsLat) txt += `🗺 [Xaritada](https://maps.google.com/?q=${order.gpsLat},${order.gpsLng})\n`;
       if (order.note) txt += `💬 ${order.note}\n`;
       txt += `\n📦 *Tarkibi:*\n`;

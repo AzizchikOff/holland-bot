@@ -90,7 +90,7 @@ function generateReport(orders, period, title) {
 
   // ── 2. BARCHA BUYURTMALAR ─────────────────────────────
   const ordersHeader = [
-    ["#", "ID", "Sana", "Manba", "Mijoz", "Telefon", "Manzil", "Mahsulotlar", "Jami (so'm)", "Holat"]
+    ["#", "ID", "Sana", "Manba", "Mijoz", "Telefon", "Manzil", "Mahsulotlar", "Jami (so'm)", "To'lov turi", "Holat"]
   ];
   const ordersRows = orders.map((o, i) => [
     i + 1,
@@ -102,13 +102,14 @@ function generateReport(orders, period, title) {
     o.address || "",
     (o.items || []).map(it => `${it.name} x${it.qty}`).join(", "),
     o.total || 0,
+    o.paymentMethod === "card" ? "Karta 💳" : "Naqd 💵",
     STATUS_UZ[o.status] || o.status || "",
   ]);
 
   const ws2 = XLSX.utils.aoa_to_sheet([...ordersHeader, ...ordersRows]);
   ws2["!cols"] = [
     {wch:4},{wch:8},{wch:18},{wch:10},{wch:18},{wch:14},
-    {wch:30},{wch:40},{wch:14},{wch:16},
+    {wch:30},{wch:40},{wch:14},{wch:14},{wch:16},
   ];
   XLSX.utils.book_append_sheet(wb, ws2, "📦 Buyurtmalar");
 

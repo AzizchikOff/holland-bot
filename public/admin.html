@@ -99,7 +99,8 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
   .main{margin-left:60px;padding:16px}
   .stats-grid{grid-template-columns:1fr 1fr}
   .orders-table th:nth-child(4),.orders-table td:nth-child(4),
-  .orders-table th:nth-child(5),.orders-table td:nth-child(5){display:none}
+  .orders-table th:nth-child(5),.orders-table td:nth-child(5),
+  .orders-table th:nth-child(6),.orders-table td:nth-child(6){display:none}
 }
 </style>
 </head>
@@ -386,6 +387,7 @@ function orderRowHTML(o, highlight=false){
   const items=(o.items||[]).map(i=>i.name+' ×'+i.qty).join(', ');
   const gpsLink=o.gpsLat?`<a class="map-link" href="https://maps.google.com/?q=${o.gpsLat},${o.gpsLng}" target="_blank">🗺</a> `:'';
   const src = o.source || 'miniapp';
+  const payLabel = o.paymentMethod === 'card' ? '💳 Karta' : '💵 Naqd';
   return `<tr id="row-${id}" class="${highlight?'new-order':''}">
     <td><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div><span class="order-source ${SOURCE_CLASS[src]||'src-miniapp'}">${SOURCE_LABELS[src]||src}</span></td>
     <td><div class="order-customer">${o.name}</div><div class="order-phone">${o.phone}</div></td>
@@ -393,6 +395,7 @@ function orderRowHTML(o, highlight=false){
     <td><div class="address-cell" title="${o.address}" onclick="copyAddr('${(o.address||'').replace(/'/g,"\\'")}')">
       ${gpsLink}${o.address}</div></td>
     <td><div class="order-total">${fmt(o.total)} so'm</div></td>
+    <td><div class="order-payment" style="font-weight: 500;">${payLabel}</div></td>
     <td>
       <select class="status-select ${STATUS_CLASS[o.status]||'s-new'}" onchange="changeStatus('${id}',this)">
         ${STATUS_OPTS.map(s=>`<option value="${s}"${s===o.status?' selected':''}>${STATUS_LABELS[s]}</option>`).join('')}
@@ -405,17 +408,18 @@ function renderDashboardOrders(orders){
   const el=document.getElementById('dashboard-orders-body');
   if(!orders.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
   el.innerHTML=`<table class="orders-table">
-    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>To'lov</th><th>Holat</th></tr></thead>
     <tbody>${orders.map(o=>orderRowHTML(o)).join('')}</tbody>
   </table>`;
 }
 
+/* Tablitsada orderlarni chizish */
 function renderOrdersTable(orders, filter){
   const el=document.getElementById('orders-body');
   const filtered=filter==='all'?orders:orders.filter(o=>o.status===filter);
   if(!filtered.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
   el.innerHTML=`<table class="orders-table">
-    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>To'lov</th><th>Holat</th></tr></thead>
     <tbody>${filtered.map(o=>orderRowHTML(o)).join('')}</tbody>
   </table>`;
 }
