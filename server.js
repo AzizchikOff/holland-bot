@@ -554,6 +554,27 @@ app.post("/api/orders", async (req, res) => {
       txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
       await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "Markdown", reply_markup: adminKb(order._id.toString()) });
     }
+    
+    // Foydalanuvchiga to'g'ridan-to'g'ri Telegram xabar yuborish
+    if (userId && userId > 0) {
+      try {
+        const payLabel = order.paymentMethod === "card" ? "💳 Karta" : "💵 Naqd";
+        let userTxt = `🛎 *Yangi buyurtmangiz qabul qilindi!* (#${order._id.toString().slice(-6).toUpperCase()})\n\n`;
+        userTxt += `💰 Jami summasi: *${fmt(order.total)} so'm*\n`;
+        userTxt += `💳 To'lov turi: *${payLabel}*\n\n`;
+        if (order.paymentMethod === "card") {
+          userTxt += `⚠️ *To'lovni amalga oshiring:*\n`;
+          userTxt += `Iltimos, buyurtmangiz tezroq tayyorlanishi uchun to'lovni Click/Payme orqali quyidagi karta raqamiga o'tkazing va chekini ushbu chatga yuboring:\n\n`;
+          userTxt += `💳 Karta: *8600 0524 8888 8888* (Holland Fast Food)\n`;
+        } else {
+          userTxt += `Taom yetkazib berilgach, kuryerga naqd pulda to'lashingiz mumkin.`;
+        }
+        await bot.sendMessage(userId, userTxt, { parse_mode: "Markdown" });
+      } catch (err) {
+        console.error("Error sending confirmation to user:", err.message);
+      }
+    }
+
     if (userId) sendToUser(userId, "new_order", { orderId: order._id.toString(), status: "new", total: order.total, items: order.items });
     sendToAdmin("new_order", { order: { ...order.toObject(), id: order._id } });
     res.json({ success: true, orderId: order._id });
