@@ -20,7 +20,8 @@ const ADMIN_ID     = Number(process.env.ADMIN_ID);
 const BOT_TOKEN    = process.env.BOT_TOKEN;
 const WEBHOOK_URL  = process.env.WEBHOOK_URL;
 const ADMIN_PASS   = process.env.ADMIN_PASS || "holland2025";
-const MINI_APP_URL = process.env.MINI_APP_URL || "https://holland-namangan.netlify.app/app/";
+let MINI_APP_URL = process.env.MINI_APP_URL || "https://holland-namangan.netlify.app/app/";
+MINI_APP_URL = MINI_APP_URL.includes("?") ? `${MINI_APP_URL}&v=2` : `${MINI_APP_URL}?v=2`;
 const IMG_BASE     = process.env.IMG_BASE || "https://holland-namangan.netlify.app/images";
 
 const isProduction = !!WEBHOOK_URL;
