@@ -560,16 +560,16 @@ app.post("/api/orders", async (req, res) => {
     if (userId && userId > 0) {
       try {
         const payLabel = order.paymentMethod === "card" ? "💳 Karta" : "💵 Naqd";
-        let userTxt = `🛎 *Yangi buyurtmangiz qabul qilindi!* (#${order._id.toString().slice(-6).toUpperCase()})\n\n`;
-        userTxt += `💰 Jami summasi: *${fmt(order.total)} so'm*\n`;
-        userTxt += `💳 To'lov turi: *${payLabel}*\n\n`;
-        if (order.paymentMethod === "card") {
-          userTxt += `⚠️ *To'lovni amalga oshiring:*\n`;
-          userTxt += `Iltimos, buyurtmangiz tezroq tayyorlanishi uchun to'lovni Click/Payme orqali quyidagi karta raqamiga o'tkazing va chekini ushbu chatga yuboring:\n\n`;
-          userTxt += `💳 Karta: *8600 0524 8888 8888* (Holland Fast Food)\n`;
-        } else {
-          userTxt += `Taom yetkazib berilgach, kuryerga naqd pulda to'lashingiz mumkin.`;
-        }
+        // let userTxt = `🛎 *Yangi buyurtmangiz qabul qilindi!* (#${order._id.toString().slice(-6).toUpperCase()})\n\n`;
+        // userTxt += `💰 Jami summasi: *${fmt(order.total)} so'm*\n`;
+        // userTxt += `💳 To'lov turi: *${payLabel}*\n\n`;
+        // if (order.paymentMethod === "card") {
+        //   userTxt += `⚠️ *To'lovni amalga oshiring:*\n`;
+        //   userTxt += `Iltimos, buyurtmangiz tezroq tayyorlanishi uchun to'lovni Click/Payme orqali quyidagi karta raqamiga o'tkazing va chekini ushbu chatga yuboring:\n\n`;
+        //   userTxt += `💳 Karta: *8600 0524 8888 8888* (Holland Fast Food)\n`;
+        // } else {
+        //   userTxt += `Taom yetkazib berilgach, kuryerga naqd pulda to'lashingiz mumkin.`;
+        // }
         await bot.sendMessage(userId, userTxt, { parse_mode: "Markdown" });
       } catch (err) {
         console.error("Error sending confirmation to user:", err.message);

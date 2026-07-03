@@ -99,8 +99,48 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:va
   .nav-item span:last-child{display:none}
   .main{margin-left:60px;padding:16px}
   .stats-grid{grid-template-columns:1fr 1fr}
-  .orders-card{overflow-x:auto}
-  .orders-table{min-width:850px}
+
+  /* Jadvalni mobil kartalarga aylantirish */
+  .orders-card{overflow-x:visible}
+  .orders-table{min-width:0;width:100%}
+  .orders-table thead{display:none}
+  .orders-table,
+  .orders-table tbody,
+  .orders-table tr,
+  .orders-table td{
+    display:block;
+    width:100%;
+  }
+  .orders-table tr{
+    margin:12px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .orders-table tr:last-child{margin-bottom:12px}
+  .orders-table td{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    padding:10px 14px;
+    border-bottom:1px solid var(--border);
+    text-align:right;
+    white-space:normal;
+  }
+  .orders-table td:last-child{border-bottom:none}
+  .orders-table td::before{
+    content:attr(data-label);
+    font-weight:700;
+    color:var(--soft);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    text-align:left;
+    flex-shrink:0;
+  }
+  .order-items, .address-cell{max-width:none;white-space:normal;text-align:right}
+  .status-select{width:auto}
 }
 @media(min-width:769px){
   .address-cell{max-width:350px;white-space:normal}
@@ -393,14 +433,14 @@ function orderRowHTML(o, highlight=false){
   const src = o.source || 'miniapp';
   const payLabel = o.paymentMethod === 'card' ? '💳 Karta' : '💵 Naqd';
   return `<tr id="row-${id}" class="${highlight?'new-order':''}">
-    <td><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div><span class="order-source ${SOURCE_CLASS[src]||'src-miniapp'}">${SOURCE_LABELS[src]||src}</span></td>
-    <td><div class="order-customer">${o.name}</div><div class="order-phone">${o.phone}</div></td>
-    <td><div class="order-items" title="${items}">${items}</div></td>
-    <td><div class="address-cell" title="${o.address}" onclick="copyAddr('${(o.address||'').replace(/'/g,"\\'")}')">
+    <td data-label="ID / Vaqt"><div class="order-id">#${shortId}</div><div class="order-date">${fmtDate(o.createdAt||o.created_at)}</div><span class="order-source ${SOURCE_CLASS[src]||'src-miniapp'}">${SOURCE_LABELS[src]||src}</span></td>
+    <td data-label="Mijoz"><div class="order-customer">${o.name}</div><div class="order-phone">${o.phone}</div></td>
+    <td data-label="Mahsulotlar"><div class="order-items" title="${items}">${items}</div></td>
+    <td data-label="Manzil"><div class="address-cell" title="${o.address}" onclick="copyAddr('${(o.address||'').replace(/'/g,"\\'")}')">
       ${gpsLink}${o.address}</div></td>
-    <td><div class="order-total">${fmt(o.total)} so'm</div></td>
-    <td><div class="order-payment" style="font-weight: 500;">${payLabel}</div></td>
-    <td>
+    <td data-label="Jami"><div class="order-total">${fmt(o.total)} so'm</div></td>
+    <td data-label="To'lov"><div class="order-payment" style="font-weight: 500;">${payLabel}</div></td>
+    <td data-label="Holat">
       <select class="status-select ${STATUS_CLASS[o.status]||'s-new'}" onchange="changeStatus('${id}',this)">
         ${STATUS_OPTS.map(s=>`<option value="${s}"${s===o.status?' selected':''}>${STATUS_LABELS[s]}</option>`).join('')}
       </select>
