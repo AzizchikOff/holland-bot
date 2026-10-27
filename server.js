@@ -190,21 +190,37 @@ const STATUS = {
 };
 
 // ══════════════════════════════════════════
-//  ADMIN TOKEN — deterministik
+//  ADMIN TOKEN — signed, expiring sessions
 // ══════════════════════════════════════════
-function computeAdminToken() {
-  return crypto.createHash("sha256")
-    .update(ADMIN_PASS + ":" + process.env.TOKEN_SECRET)
-    .digest("hex");
+const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
+const SSE_TICKET_MS = 60 * 1000;
+function signAdmin(value) {
+  return crypto.createHmac("sha256", process.env.TOKEN_SECRET)
+    .update("holland-admin:" + ADMIN_PASS + ":" + value).digest("hex");
+}
+function createSignedToken(purpose, ttl) {
+  const expires = Date.now() + ttl;
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const payload = purpose + "." + expires + "." + nonce;
+  return payload + "." + signAdmin(payload);
+}
+function verifySignedToken(token, purpose) {
+  if (typeof token !== "string" || token.length > 300) return false;
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== purpose || !/^\d{13}$/.test(parts[1]) ||
+      !/^[a-f0-9]{32}$/.test(parts[2]) || !/^[a-f0-9]{64}$/.test(parts[3])) return false;
+  const expires = Number(parts[1]);
+  const ttl = purpose === "sse" ? SSE_TICKET_MS : ADMIN_SESSION_MS;
+  if (expires <= Date.now() || expires > Date.now() + ttl) return false;
+  const expected = signAdmin(parts.slice(0, 3).join("."));
+  return crypto.timingSafeEqual(Buffer.from(parts[3], "hex"), Buffer.from(expected, "hex"));
 }
 function checkBearer(req) {
   const auth = req.headers["authorization"] || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token && token === computeAdminToken();
+  return auth.startsWith("Bearer ") && verifySignedToken(auth.slice(7), "admin");
 }
 function checkSseToken(req) {
-  const token = req.query.token || "";
-  return token && token === computeAdminToken().slice(0, 16);
+  return verifySignedToken(req.query.token, "sse");
 }
 
 // ══════════════════════════════════════════
@@ -313,6 +329,12 @@ app.get("/api/stream/:userId", (req, res) => {
   // Faqat tasdiqlangan foydalanuvchi holat yangilanishlarini oladi
   if (authorized) addClient(userId, res);
   req.on("close", () => { clearInterval(ping); if (authorized) removeClient(userId, res); });
+});
+
+app.post("/api/admin/sse-ticket", (req, res) => {
+  if (!checkBearer(req)) return res.status(401).json({ error: "Ruxsat yo‘q" });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ticket: createSignedToken("sse", SSE_TICKET_MS) });
 });
 
 app.get("/api/admin/stream", (req, res) => {
@@ -713,7 +735,7 @@ app.post("/api/admin/login", (req, res) => {
   if (rateLimit(`admin:${req.ip}`, 5)) return res.status(429).json({success:false,error:"Ko‘p urinish. Keyinroq urinib ko‘ring."});
   const { pass } = req.body || {};
   if (typeof pass === "string" && crypto.timingSafeEqual(crypto.createHash("sha256").update(pass).digest(), crypto.createHash("sha256").update(ADMIN_PASS).digest())) {
-    return res.json({ success: true, token: computeAdminToken() });
+    return res.json({ success: true, token: createSignedToken("admin", ADMIN_SESSION_MS) });
   }
   res.status(401).json({ success: false });
 });
