@@ -154,7 +154,8 @@ function calcOrder(clientItems) {
   for (const it of clientItems) {
     const menuItem = MENU_MAP[String(it.id || it.productId)];
     if (!menuItem) { errors.push(`Noma'lum mahsulot: ${it.id}`); continue; }
-    const qty = Math.min(Math.max(Math.floor(Number(it.qty) || 1), 1), 20);
+    const qty = Number(it.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 20) { errors.push("Mahsulot miqdori noto'g'ri"); continue; }
     const lineTotal = menuItem.price * qty;
     total += lineTotal;
     items.push({ id: menuItem.id, name: menuItem.name, price: menuItem.price, qty });
@@ -342,7 +343,7 @@ function mainKb() {
 function menuKb() {
   return {
     inline_keyboard: [
-      ...CATEGORIES.map(c => [{ text: `${c.emoji} ${c.label}`, callback_data: `cat_${c.id}` }]),
+      ...CATEGORIES.map(c => [{ text: `${c.label}`, callback_data: `cat_${c.id}` }]),
       [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
     ],
   };
@@ -521,6 +522,7 @@ bot.on("callback_query", async (q) => {
   // ── Admin holat ──
   if (data.startsWith("s_") && id === ADMIN_ID) {
     const [, oid, status] = data.split("_");
+    if (!/^[a-f0-9]{24}$/i.test(oid) || !Object.hasOwn(STATUS, status)) return;
     const order = await Order.findByIdAndUpdate(oid, { status }, { new: true });
     if (!order) return;
     // ✅ FIX 2g: editMessageReplyMarkup xatoligini handle qilish
@@ -541,7 +543,8 @@ bot.on("callback_query", async (q) => {
   if (data.startsWith("cat_")) {
     const catId = data.replace("cat_","");
     const cat   = CATEGORIES.find(c => c.id === catId);
-    await bot.editMessageText(`${cat.emoji} *${cat.label}*\n${cat.desc}\n\n📦 ${MENU.filter(m=>m.cat===catId).length} ta mahsulot:`,
+    if (!cat) return;
+    await bot.editMessageText(`*${cat.label}*\n${cat.desc}\n\n📦 ${MENU.filter(m=>m.cat===catId).length} ta mahsulot:`,
       { chat_id:id, message_id:q.message.message_id, parse_mode:"Markdown", reply_markup: catProductsKb(catId,0) });
     return;
   }
@@ -554,7 +557,7 @@ bot.on("callback_query", async (q) => {
     const prod = MENU.find(m => m.id === data.replace("prod_",""));
     if (!prod) return;
     const cat = CATEGORIES.find(c => c.id === prod.cat);
-    const caption = `${cat.emoji} *${escMd(prod.name)}*\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
+    const caption = `*${escMd(prod.name)}*\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
     const kb = { inline_keyboard: [
       [{ text:"🛒 Buyurtma berish", web_app:{ url: MINI_APP_URL } }],
       [{ text:"🔙 Menuga qaytish", callback_data:`cat_${prod.cat}` }],
@@ -610,8 +613,8 @@ app.post("/api/orders", async (req, res) => {
     }
 
     // ✅ FIX 1a: Narxni serverda hisoblash — mijoz yuborgan narxlarga ISHONMAYMIZ
-    const { items, total } = calcOrder(clientItems);
-    if (!items.length) {
+    const { items, total, errors } = calcOrder(clientItems);
+    if (errors.length || !items.length) {
       return res.status(400).json({ success: false, error: "Menyu'da mavjud bo'lmagan mahsulotlar" });
     }
 
