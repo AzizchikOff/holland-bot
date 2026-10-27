@@ -10,7 +10,7 @@ function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n || 0); }
 // Spreadsheet applications may interpret leading formula characters as formulas.
 function safeCell(value) {
   if (typeof value !== "string") return value;
-  return /^[\\s\\u0000-\\u001f]*[=+@-]/.test(value) ? "'" + value : value;
+  return /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? "'" + value : value;
 }
 
 
