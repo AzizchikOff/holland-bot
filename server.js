@@ -626,6 +626,14 @@ app.post("/api/orders", async (req, res) => {
     if (typeof name !== "string" || typeof phone !== "string" || typeof address !== "string" || !name.trim() || !phone.trim() || !address.trim()) {
       return res.status(400).json({ success: false, error: "Ism, telefon va manzil to'ldirilishi shart" });
     }
+    // Reject oversized inputs instead of silently truncating customer details.
+    if (name.length > 100 || phone.length > 20 || address.length > 300 ||
+        (typeof note === "string" && note.length > 200)) {
+      return res.status(400).json({ success:false, error:"Kiritilgan ma'lumot juda uzun" });
+    }
+    if (typeof note !== "undefined" && typeof note !== "string") {
+      return res.status(400).json({ success:false, error:"Izoh noto‘g‘ri" });
+    }
     if (!Array.isArray(clientItems) || clientItems.length === 0 || clientItems.length > 50) {
       return res.status(400).json({ success: false, error: "Savat bo'sh" });
     }
@@ -644,7 +652,6 @@ app.post("/api/orders", async (req, res) => {
     const realSource = isValid ? "miniapp"
                      : (["website","bot"].includes(source) ? source : "website");
 
-    if (typeof note !== "undefined" && typeof note !== "string") return res.status(400).json({success:false,error:"Izoh noto‘g‘ri"});
     const order = await Order.create({
       userId,
       name:          name.trim().slice(0, 100),
