@@ -557,7 +557,7 @@ bot.on("callback_query", async (q) => {
     const prod = MENU.find(m => m.id === data.replace("prod_",""));
     if (!prod) return;
     const cat = CATEGORIES.find(c => c.id === prod.cat);
-    const caption = `${cat.emoji} *${escMd(prod.name)}*\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
+    const caption = `*${escMd(prod.name)}*\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
     const kb = { inline_keyboard: [
       [{ text:"🛒 Buyurtma berish", web_app:{ url: MINI_APP_URL } }],
       [{ text:"🔙 Menuga qaytish", callback_data:`cat_${prod.cat}` }],
