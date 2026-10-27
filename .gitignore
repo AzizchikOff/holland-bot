@@ -2,3 +2,6 @@
 bot/.env
 .env
 *.db
+
+node_modules/
+.env
