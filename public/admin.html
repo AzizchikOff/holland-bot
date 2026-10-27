@@ -386,12 +386,11 @@ function esc(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-// JS string ichiga (onclick) xavfsiz joylash
-function escJs(s){
-  return String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"')
-    .replace(/</g,'\\u003C').replace(/\r?\n/g,' ');
-}
-
+// Address copying uses event delegation, never inline JavaScript.
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-copy-address]');
+  if (target) copyAddr(target.dataset.copyAddress || '');
+});
 function orderRowHTML(o, highlight=false){
   const id=(o._id||o.id||'').toString().replace(/[^a-zA-Z0-9]/g,'');
   const shortId=esc(id.slice(-6).toUpperCase());
@@ -404,7 +403,7 @@ function orderRowHTML(o, highlight=false){
     <td><div class="order-id">#${shortId}</div><div class="order-date">${esc(fmtDate(o.createdAt||o.created_at))}</div><span class="order-source ${SOURCE_CLASS[src]}">${SOURCE_LABELS[src]}</span></td>
     <td><div class="order-customer">${esc(o.name)}</div><div class="order-phone">${esc(o.phone)}</div></td>
     <td><div class="order-items" title="${items}">${items}</div></td>
-    <td><div class="address-cell" title="${esc(o.address)}" onclick="copyAddr('${escJs(o.address)}')">
+    <td><div class="address-cell" title="${esc(o.address)}" data-copy-address="${esc(o.address)}">
       ${gpsLink}${esc(o.address)}</div></td>
     <td><div class="order-total">${esc(fmt(o.total))} so'm</div></td>
     <td>
