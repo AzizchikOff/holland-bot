@@ -21,6 +21,7 @@ if (!ADMIN_PASS) { console.error("❌ ADMIN_PASS env o'zgaruvchisi yo'q!"); proc
 
 // ✅ FIX 5: BOT_TOKEN tekshiruvi — aks holda new TelegramBot(undefined) yiqiladi
 if (!BOT_TOKEN) { console.error("❌ BOT_TOKEN env o'zgaruvchisi yo'q!"); process.exit(1); }
+if (!process.env.TOKEN_SECRET || process.env.TOKEN_SECRET.length < 32) { console.error("❌ TOKEN_SECRET kamida 32 belgidan iborat bo‘lishi shart!"); process.exit(1); }
 if (!process.env.MONGO_URI) { console.error("❌ MONGO_URI env o'zgaruvchisi yo'q!"); process.exit(1); }
 if (!ADMIN_ID) { console.warn("⚠️ ADMIN_ID yo'q — buyurtmalar hech kimga yuborilmaydi!"); }
 
@@ -38,6 +39,8 @@ app.use(cors({
   ],
   methods: ["GET","POST","PATCH"],
 }));
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "100kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -45,7 +48,10 @@ app.use(express.static(path.join(__dirname, "public")));
 const rateLimitMap = new Map();
 function rateLimit(ip, maxPerMinute = 10) {
   const now = Date.now();
-  const key = `${ip}`;
+  const key = String(ip || "unknown");
+  if (rateLimitMap.size > 10000) {
+    for (const [k, value] of rateLimitMap) if (value.resetAt < now) rateLimitMap.delete(k);
+  }
   const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + 60000 };
   if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60000; }
   entry.count++;
@@ -187,7 +193,7 @@ const STATUS = {
 // ══════════════════════════════════════════
 function computeAdminToken() {
   return crypto.createHash("sha256")
-    .update(ADMIN_PASS + process.env.TOKEN_SECRET || "holland_internal_v2")
+    .update(ADMIN_PASS + ":" + process.env.TOKEN_SECRET)
     .digest("hex");
 }
 function checkBearer(req) {
@@ -394,7 +400,7 @@ bot.onText(/\/start/, async (msg) => {
     Order.findOne({ userId: id }).sort({ createdAt: -1 }),
   ]);
   let text = `🍔 *Holland Fast Food*\n\nAssalomu alaykum, *${escMd(name)}*\\! 👋\n\n`;
-  text += `┌ ⚡ Yetkazib berish: *10–15 daqiqa*\n`;
+  text += `┌ ⚡ Yetkazib berish: *Buyurtma asosidaa*\n`;
   text += `├ ✅ Mahsulot: *100% Halol*\n`;
   text += `├ 🔥 Taom: *Har doim issiq*\n`;
   text += `└ 👥 Mijozlar: *${userCount} ta*\n\n`;
@@ -570,6 +576,7 @@ bot.on("callback_query", async (q) => {
 //  API — Menu (yagona manba)
 // ══════════════════════════════════════════
 app.get("/api/menu", (req, res) => {
+  res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
   res.json({ categories: CATEGORIES, items: MENU });
 });
 
@@ -578,7 +585,7 @@ app.get("/api/menu", (req, res) => {
 // ══════════════════════════════════════════
 app.post("/api/orders", async (req, res) => {
   // ✅ FIX: Rate limit
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.ip;
+  const ip = req.ip;
   if (rateLimit(ip, 5)) return res.status(429).json({ success:false, error:"Juda ko'p so'rov. Biroz kuting." });
 
   try {
@@ -591,14 +598,14 @@ app.post("/api/orders", async (req, res) => {
     const userId  = isValid ? tgUser.id : 0;   // tasdiqlanmasa 0 (anonim sayt buyurtmasi)
 
     // Validatsiya
-    if (!name?.trim() || !phone?.trim() || !address?.trim()) {
+    if (typeof name !== "string" || typeof phone !== "string" || typeof address !== "string" || !name.trim() || !phone.trim() || !address.trim()) {
       return res.status(400).json({ success: false, error: "Ism, telefon va manzil to'ldirilishi shart" });
     }
-    if (!clientItems?.length) {
+    if (!Array.isArray(clientItems) || clientItems.length === 0 || clientItems.length > 50) {
       return res.status(400).json({ success: false, error: "Savat bo'sh" });
     }
     // ✅ Telefon: kamida 9 raqam
-    if (phone.replace(/\D/g, "").length < 9) {
+    if (phone.replace(/\D/g, "").length < 9 || phone.replace(/\D/g, "").length > 15) {
       return res.status(400).json({ success: false, error: "Telefon raqam noto'g'ri" });
     }
 
@@ -612,14 +619,15 @@ app.post("/api/orders", async (req, res) => {
     const realSource = isValid ? "miniapp"
                      : (["website","bot"].includes(source) ? source : "website");
 
+    if (typeof note !== "undefined" && typeof note !== "string") return res.status(400).json({success:false,error:"Izoh noto‘g‘ri"});
     const order = await Order.create({
       userId,
       name:          name.trim().slice(0, 100),
       phone:         phone.trim().slice(0, 20),
       address:       address.trim().slice(0, 300),
       note:          (note || "").trim().slice(0, 200),
-      gpsLat:        gps?.lat || null,
-      gpsLng:        gps?.lng || null,
+      gpsLat:        Number.isFinite(Number(gps?.lat)) && Math.abs(Number(gps.lat)) <= 90 ? Number(gps.lat) : null,
+      gpsLng:        Number.isFinite(Number(gps?.lng)) && Math.abs(Number(gps.lng)) <= 180 ? Number(gps.lng) : null,
       items,   // ← serverdan
       total,   // ← serverdan
       paymentMethod: ["cash","card"].includes(paymentMethod) ? paymentMethod : "cash",
@@ -640,7 +648,11 @@ app.post("/api/orders", async (req, res) => {
       txt += `\n📦 *Tarkibi:*\n`;
       order.items.forEach(i => { txt += `• ${escMd(i.name)} × ${i.qty} \\= ${fmt(i.price*i.qty)} so'm\n`; });
       txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
-      await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2", reply_markup: adminKb(order._id.toString()) });
+      try {
+        await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2", reply_markup: adminKb(order._id.toString()) });
+      } catch (notificationError) {
+        console.error("Admin notification failed for order", order._id.toString(), notificationError.message);
+      }
     }
 
     if (userId && userId > 0) {
@@ -683,7 +695,10 @@ app.get("/api/orders/user/:uid", async (req, res) => {
   } catch { res.json([]); }
 });
 
-app.get("/api/stats", async (req, res) => {
+app.get("/api/stats", (req, res, next) => {
+  if (!checkBearer(req)) return res.status(401).json({error:"Ruxsat yo‘q"});
+  next();
+}, async (req, res) => {
   try { res.json({ users: await User.countDocuments(), orders: await Order.countDocuments() }); }
   catch { res.json({ users:0, orders:0 }); }
 });
@@ -692,8 +707,9 @@ app.get("/api/stats", async (req, res) => {
 //  ADMIN API
 // ══════════════════════════════════════════
 app.post("/api/admin/login", (req, res) => {
-  const { pass } = req.body;
-  if (pass === ADMIN_PASS) {
+  if (rateLimit(`admin:${req.ip}`, 5)) return res.status(429).json({success:false,error:"Ko‘p urinish. Keyinroq urinib ko‘ring."});
+  const { pass } = req.body || {};
+  if (typeof pass === "string" && crypto.timingSafeEqual(crypto.createHash("sha256").update(pass).digest(), crypto.createHash("sha256").update(ADMIN_PASS).digest())) {
     return res.json({ success: true, token: computeAdminToken() });
   }
   res.status(401).json({ success: false });
@@ -822,6 +838,7 @@ app.get("/api/admin/report/custom", async (req, res) => {
 });
 
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
-app.get("/",      (req, res) => res.json({ ok:true, service:"Holland API ✅" }));
+app.get("/health", (req, res) => res.json({ok: true, database: mongoose.connection.readyState === 1 ? "connected" : "unavailable"}));
+app.get("/",      (req, res) => res.json({ ok:true, service:"Holland API" }));
 
 app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));

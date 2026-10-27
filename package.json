@@ -1,8 +1,8 @@
 {
   "name": "holland-bot",
-  "version": "2.0.0",
-  "description": "Holland Fast Food — Professional Telegram Bot",
-  "main": "bot.js",
+  "version": "2.1.0",
+  "description": "Holland Fast Food — Telegram Bot & API",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
@@ -20,5 +20,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
