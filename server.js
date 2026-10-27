@@ -541,7 +541,7 @@ bot.on("callback_query", async (q) => {
     txt += `📦 Jami: *${orders.length}*\n✅ Yetkazilgan: *${delivered.length}*\n`;
     txt += `💰 Tushum: *${fmt(totalSum)} so'm*`;
     await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2" });
-    const buf = getReportBuffer(orders, data.replace("report_",""), title);
+    const buf = await getReportBuffer(orders, data.replace("report_",""), title);
     await bot.sendDocument(ADMIN_ID, Buffer.from(buf),
       { caption: `📎 ${fname}` },
       { filename: fname, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
@@ -828,7 +828,7 @@ app.get("/api/admin/report/weekly", async (req, res) => {
     const from = new Date(); from.setDate(from.getDate()-7); from.setHours(0,0,0,0);
     const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
     const title  = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
-    const buf    = getReportBuffer(orders, "weekly", title);
+    const buf    = await getReportBuffer(orders, "weekly", title);
     const fname  = `Holland_haftalik_${new Date().toISOString().slice(0,10)}.xlsx`;
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
@@ -841,7 +841,7 @@ app.get("/api/admin/report/monthly", async (req, res) => {
     const from = new Date(); from.setDate(1); from.setHours(0,0,0,0);
     const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
     const title  = `Oylik — ${new Date().toLocaleString("uz-UZ",{month:"long",year:"numeric"})}`;
-    const buf    = getReportBuffer(orders, "monthly", title);
+    const buf    = await getReportBuffer(orders, "monthly", title);
     const fname  = `Holland_oylik_${new Date().toISOString().slice(0,7)}.xlsx`;
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
@@ -854,7 +854,7 @@ app.get("/api/admin/report/today", async (req, res) => {
     const from = new Date(); from.setHours(0,0,0,0);
     const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
     const title  = `Bugungi — ${from.toLocaleDateString("uz-UZ")}`;
-    const buf    = getReportBuffer(orders, "today", title);
+    const buf    = await getReportBuffer(orders, "today", title);
     const fname  = `Holland_bugun_${from.toISOString().slice(0,10)}.xlsx`;
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
@@ -869,7 +869,7 @@ app.get("/api/admin/report/custom", async (req, res) => {
     from.setHours(0,0,0,0); to.setHours(23,59,59,999);
     const orders = await Order.find({ createdAt:{ $gte:from, $lte:to } }).sort({ createdAt:-1 });
     const title  = `${from.toLocaleDateString("uz-UZ")} — ${to.toLocaleDateString("uz-UZ")}`;
-    const buf    = getReportBuffer(orders, "custom", title);
+    const buf    = await getReportBuffer(orders, "custom", title);
     const fname  = `Holland_hisobot_${from.toISOString().slice(0,10)}_${to.toISOString().slice(0,10)}.xlsx`;
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
