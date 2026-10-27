@@ -40,6 +40,14 @@ app.use(cors({
   methods: ["GET","POST","PATCH"],
 }));
 app.disable("x-powered-by");
+// Security headers for the admin UI and JSON API; no CSP yet because the admin UI uses inline scripts.
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "100kb" }));
 app.use(express.static(path.join(__dirname, "public")));
