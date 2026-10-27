@@ -6,6 +6,14 @@ const XLSX = require("xlsx");
 
 function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n || 0); }
 
+// Keep user-provided values as literal text when exporting spreadsheets.
+// Spreadsheet applications may interpret leading formula characters as formulas.
+function safeCell(value) {
+  if (typeof value !== "string") return value;
+  return /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? "'" + value : value;
+}
+
+
 // ── Sanani formatlash ──────────────────────────────────────
 function fmtDate(d) {
   if (!d) return "";
@@ -80,7 +88,7 @@ function generateReport(orders, period, title) {
     topProduct ? [topProduct[0], `${topProduct[1].qty} ta — ${fmt(topProduct[1].sum)} so'm`] : ["—", "—"],
   ];
 
-  const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryData.map(row => row.map(safeCell)));
   ws1["!cols"] = [{ wch: 30 }, { wch: 25 }];
 
   // Stillar uchun ranglar (xlsx-style bilan ishlaydi)
@@ -106,7 +114,7 @@ function generateReport(orders, period, title) {
     STATUS_UZ[o.status] || o.status || "",
   ]);
 
-  const ws2 = XLSX.utils.aoa_to_sheet([...ordersHeader, ...ordersRows]);
+  const ws2 = XLSX.utils.aoa_to_sheet([...ordersHeader, ...ordersRows.map(row => row.map(safeCell))]);
   ws2["!cols"] = [
     {wch:4},{wch:8},{wch:18},{wch:10},{wch:18},{wch:14},
     {wch:30},{wch:40},{wch:14},{wch:14},{wch:16},
@@ -123,7 +131,7 @@ function generateReport(orders, period, title) {
       totalQty ? ((d.qty / totalQty) * 100).toFixed(1) + "%" : "0%",
     ]);
 
-  const ws3 = XLSX.utils.aoa_to_sheet([...prodHeader, ...prodRows]);
+  const ws3 = XLSX.utils.aoa_to_sheet([...prodHeader, ...prodRows.map(row => row.map(safeCell))]);
   ws3["!cols"] = [{wch:4},{wch:30},{wch:12},{wch:18},{wch:10}];
   XLSX.utils.book_append_sheet(wb, ws3, "🍟 Mahsulotlar");
 
@@ -159,7 +167,7 @@ function generateReport(orders, period, title) {
     .sort((a, b) => b.sum - a.sum)
     .map((c, i) => [i + 1, c.name || "", c.phone || "", c.count, c.sum]);
 
-  const ws5 = XLSX.utils.aoa_to_sheet([...clientHeader, ...clientRows]);
+  const ws5 = XLSX.utils.aoa_to_sheet([...clientHeader, ...clientRows.map(row => row.map(safeCell))]);
   ws5["!cols"] = [{wch:4},{wch:20},{wch:16},{wch:14},{wch:18}];
   XLSX.utils.book_append_sheet(wb, ws5, "👥 Mijozlar");
 
