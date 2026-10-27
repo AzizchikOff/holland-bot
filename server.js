@@ -99,11 +99,11 @@ const Order = mongoose.model("Order", OrderSchema);
 //  MENU — yagona manba (server + bot + API)
 // ══════════════════════════════════════════
 const CATEGORIES = [
-  { id: "free",   emoji: "🍟", label: "Holland Free",  desc: "Issiq va mazali kartoshka fri" },
-  { id: "burger", emoji: "🍔", label: "Burger",        desc: "Shirador burger va sandvichlar" },
-  { id: "hotdog", emoji: "🌭", label: "Hot-dog",       desc: "Klassik va asl hot-doglar" },
-  { id: "sous",   emoji: "🫙", label: "Sous",          desc: "Turli xil sous va qo'shimchalar" },
-  { id: "drink",  emoji: "🥤", label: "Ichimliklar",   desc: "Sovuq va shirin ichimliklar" },
+  { id: "free", label: "Holland Free",  desc: "Issiq va mazali kartoshka fri" },
+  { id: "burger", label: "Burger",        desc: "Shirador burger va sandvichlar" },
+  { id: "hotdog", label: "Hot-dog",       desc: "Klassik va asl hot-doglar" },
+  { id: "sous", label: "Sous",          desc: "Turli xil sous va qo'shimchalar" },
+  { id: "drink", label: "Ichimliklar",   desc: "Sovuq va shirin ichimliklar" },
 ];
 
 const MENU = [
