@@ -258,9 +258,9 @@ function fmt(n){ return new Intl.NumberFormat('uz-UZ').format(Math.round(n)); }
 function fmtDate(d){ return new Date(d).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 
 // ── AUTH ──
-let TOKEN = localStorage.getItem('admin_token') || '';
+let TOKEN = sessionStorage.getItem('admin_token') || '';
 function getHeaders(){ return { 'Content-Type':'application/json', 'Authorization': 'Bearer '+TOKEN }; }
-function getSseToken(){ return localStorage.getItem('admin_ssetoken') || ''; }
+
 
 function showLogin(errMsg){
   document.getElementById('app').style.display='none';
@@ -513,10 +513,25 @@ async function loadReportStats(){
 }
 
 // ── SSE ──
-function connectSSE(){
-  const sseToken = getSseToken();
-  if(!sseToken) return;
-  const sse=new EventSource(`${API}/api/admin/stream?token=${sseToken}`);
+let activeSse = null;
+let sseReconnectTimer = null;
+async function connectSSE(){
+  if(!TOKEN) return;
+  if(activeSse) activeSse.close();
+  clearTimeout(sseReconnectTimer);
+  let ticket;
+  try {
+    const r = await fetch(`${API}/api/admin/sse-ticket`, {method:'POST',headers:getHeaders()});
+    if(r.status===401){ doLogout(); return; }
+    if(!r.ok) throw new Error('SSE ticket error');
+    ticket = (await r.json()).ticket;
+  } catch {
+    sseReconnectTimer=setTimeout(connectSSE,5000);
+    return;
+  }
+  if(!TOKEN) return;
+  const sse=new EventSource(`${API}/api/admin/stream?token=${encodeURIComponent(ticket)}`);
+  activeSse=sse;
   sse.addEventListener('new_order', e=>{
     const {order}=JSON.parse(e.data);
     if(order){
@@ -537,7 +552,7 @@ function connectSSE(){
     });
     loadStats();
   });
-  sse.onerror=()=>setTimeout(connectSSE,5000);
+  sse.onerror=()=>{ sse.close(); if(activeSse===sse) activeSse=null; clearTimeout(sseReconnectTimer); sseReconnectTimer=setTimeout(connectSSE,5000); };
 }
 
 let notifTimer;
@@ -596,9 +611,9 @@ if(!TOKEN){
   showLogin();
 } else {
   fetch(`${API}/api/admin/stats`, { headers: getHeaders() }).then(r=>{
-    if(r.status===401){ showLogin(); }
+    if(r.status===401){ doLogout(); }
     else { hideLogin(); init(); }
-  }).catch(()=>{ hideLogin(); init(); });
+  }).catch(()=>{ showLogin('Server bilan bog‘lanib bo‘lmadi'); });
 }
 </script>
 </body>
