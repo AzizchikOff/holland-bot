@@ -331,7 +331,13 @@ app.get("/api/stream/:userId", (req, res) => {
   req.on("close", () => { clearInterval(ping); if (authorized) removeClient(userId, res); });
 });
 
-app.post("/api/admin/sse-ticket", (req, res) => {\n  if (!checkBearer(req)) return res.status(401).json({ error: "Ruxsat yo‘q" });\n  res.setHeader("Cache-Control", "no-store");\n  res.json({ ticket: createSignedToken("sse", SSE_TICKET_MS) });\n});\n\napp.get("/api/admin/stream", (req, res) => {
+app.post("/api/admin/sse-ticket", (req, res) => {
+  if (!checkBearer(req)) return res.status(401).json({ error: "Ruxsat yo‘q" });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ticket: createSignedToken("sse", SSE_TICKET_MS) });
+});
+
+app.get("/api/admin/stream", (req, res) => {
   if (!checkSseToken(req)) return res.status(401).end();
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
