@@ -2,7 +2,7 @@
 // Holland Fast Food — haftalik va oylik hisobotlar
 // O'rnatish: npm install xlsx
 
-const XLSX = require("xlsx");
+const ExcelJS = require("exceljs");
 
 function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n || 0); }
 
@@ -47,7 +47,7 @@ const SOURCE_UZ = {
 //  ASOSIY HISOBOT GENERATSIYASI
 // ══════════════════════════════════════════════════════════
 function generateReport(orders, period, title) {
-  const wb = XLSX.utils.book_new();
+  const wb = new ExcelJS.Workbook();
 
   // ── 1. UMUMIY XULOSА ──────────────────────────────────
   const delivered   = orders.filter(o => o.status === "delivered");
@@ -88,13 +88,13 @@ function generateReport(orders, period, title) {
     topProduct ? [topProduct[0], `${topProduct[1].qty} ta — ${fmt(topProduct[1].sum)} so'm`] : ["—", "—"],
   ];
 
-  const ws1 = XLSX.utils.aoa_to_sheet(summaryData.map(row => row.map(safeCell)));
-  ws1["!cols"] = [{ wch: 30 }, { wch: 25 }];
+  const ws1 = wb.addWorksheet("Xulosa");
+  (summaryData.map(row => row.map(safeCell))).forEach(row => ws1.addRow(row));
+  ws1.columns = [{ width: 30 }, { width: 25 }];
 
   // Stillar uchun ranglar (xlsx-style bilan ishlaydi)
-  ws1["A1"] = { v: "🍔 HOLLAND FAST FOOD — HISOBOT", t: "s" };
+  ws1.getCell("A1").value = "🍔 HOLLAND FAST FOOD — HISOBOT";
 
-  XLSX.utils.book_append_sheet(wb, ws1, "📊 Xulosa");
 
   // ── 2. BARCHA BUYURTMALAR ─────────────────────────────
   const ordersHeader = [
@@ -114,12 +114,12 @@ function generateReport(orders, period, title) {
     STATUS_UZ[o.status] || o.status || "",
   ]);
 
-  const ws2 = XLSX.utils.aoa_to_sheet([...ordersHeader, ...ordersRows.map(row => row.map(safeCell))]);
-  ws2["!cols"] = [
-    {wch:4},{wch:8},{wch:18},{wch:10},{wch:18},{wch:14},
-    {wch:30},{wch:40},{wch:14},{wch:14},{wch:16},
+  const ws2 = wb.addWorksheet("Buyurtmalar");
+  ([...ordersHeader, ...ordersRows.map(row => row.map(safeCell))]).forEach(row => ws2.addRow(row));
+  ws2.columns = [
+    {width:4},{width:8},{width:18},{width:10},{width:18},{width:14},
+    {width:30},{width:40},{width:14},{width:14},{width:16},
   ];
-  XLSX.utils.book_append_sheet(wb, ws2, "📦 Buyurtmalar");
 
   // ── 3. MAHSULOTLAR STATISTIKASI ───────────────────────
   const prodHeader = [["#", "Mahsulot nomi", "Soni (ta)", "Umumiy (so'm)", "Ulush (%)"]];
@@ -131,9 +131,9 @@ function generateReport(orders, period, title) {
       totalQty ? ((d.qty / totalQty) * 100).toFixed(1) + "%" : "0%",
     ]);
 
-  const ws3 = XLSX.utils.aoa_to_sheet([...prodHeader, ...prodRows.map(row => row.map(safeCell))]);
-  ws3["!cols"] = [{wch:4},{wch:30},{wch:12},{wch:18},{wch:10}];
-  XLSX.utils.book_append_sheet(wb, ws3, "🍟 Mahsulotlar");
+  const ws3 = wb.addWorksheet("Mahsulotlar");
+  ([...prodHeader, ...prodRows.map(row => row.map(safeCell))]).forEach(row => ws3.addRow(row));
+  ws3.columns = [{width:4},{width:30},{width:12},{width:18},{width:10}];
 
   // ── 4. KUNLIK TAQSIMOT ────────────────────────────────
   const dayMap = {};
@@ -149,9 +149,9 @@ function generateReport(orders, period, title) {
   const dayRows   = Object.entries(dayMap).map(([day, d]) => [
     day, d.count, d.delivered, d.cancelled, d.sum,
   ]);
-  const ws4 = XLSX.utils.aoa_to_sheet([...dayHeader, ...dayRows]);
-  ws4["!cols"] = [{wch:14},{wch:16},{wch:14},{wch:10},{wch:18}];
-  XLSX.utils.book_append_sheet(wb, ws4, "📅 Kunlik");
+  const ws4 = wb.addWorksheet("Kunlik");
+  ([...dayHeader, ...dayRows]).forEach(row => ws4.addRow(row));
+  ws4.columns = [{width:14},{width:16},{width:14},{width:10},{width:18}];
 
   // ── 5. MIJOZLAR ───────────────────────────────────────
   const clientMap = {};
@@ -167,17 +167,17 @@ function generateReport(orders, period, title) {
     .sort((a, b) => b.sum - a.sum)
     .map((c, i) => [i + 1, c.name || "", c.phone || "", c.count, c.sum]);
 
-  const ws5 = XLSX.utils.aoa_to_sheet([...clientHeader, ...clientRows.map(row => row.map(safeCell))]);
-  ws5["!cols"] = [{wch:4},{wch:20},{wch:16},{wch:14},{wch:18}];
-  XLSX.utils.book_append_sheet(wb, ws5, "👥 Mijozlar");
+  const ws5 = wb.addWorksheet("Mijozlar");
+  ([...clientHeader, ...clientRows.map(row => row.map(safeCell))]).forEach(row => ws5.addRow(row));
+  ws5.columns = [{width:4},{width:20},{width:16},{width:14},{width:18}];
 
   return wb;
 }
 
 // ── Hisobotni buffer sifatida qaytarish ───────────────────
-function getReportBuffer(orders, period, title) {
+async function getReportBuffer(orders, period, title) {
   const wb = generateReport(orders, period, title);
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 module.exports = { getReportBuffer };
