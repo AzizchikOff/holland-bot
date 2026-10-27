@@ -1,869 +1,620 @@
-require("dotenv").config();
-const express     = require("express");
-const cors        = require("cors");
-const mongoose    = require("mongoose");
-const TelegramBot = require("node-telegram-bot-api");
-const path        = require("path");
-const crypto      = require("crypto");
-const { getReportBuffer } = require("./reports");
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Holland Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--red:#E8342A;--dark:#111827;--mid:#6b7280;--soft:#9ca3af;--light:#f9fafb;--white:#fff;--border:#e5e7eb;--green:#10b981;--yellow:#f59e0b;--blue:#3b82f6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--light);color:var(--dark);min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;width:220px;height:100vh;background:var(--dark);padding:24px 16px;display:flex;flex-direction:column;gap:4px;z-index:100}
+.sidebar-logo{font-size:18px;font-weight:800;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;color:rgba(255,255,255,.6);font-size:14px;font-weight:500;transition:all .15s}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-item.active{background:var(--red);color:#fff}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.main{margin-left:220px;padding:24px;min-height:100vh}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.topbar-title{font-size:22px;font-weight:800}
+.live-badge{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--white);border:1px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;color:var(--mid)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-const app          = express();
-const PORT         = process.env.PORT || 3000;
-const ADMIN_ID     = Number(process.env.ADMIN_ID);
-const BOT_TOKEN    = process.env.BOT_TOKEN;
-const WEBHOOK_URL  = process.env.WEBHOOK_URL;
-const MINI_APP_URL = process.env.MINI_APP_URL || "https://holland-namangan.netlify.app/app/";
-const IMG_BASE     = process.env.IMG_BASE || "https://holland-namangan.netlify.app/images";
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:var(--white);border-radius:14px;padding:18px;border:1px solid var(--border)}
+.stat-label{font-size:12px;font-weight:600;color:var(--mid);margin-bottom:8px}
+.stat-num{font-size:26px;font-weight:800;color:var(--dark)}
+.stat-sub{font-size:12px;color:var(--soft);margin-top:4px}
+.stat-icon{font-size:20px;margin-bottom:8px}
 
-// ✅ FIX 1e: Default parol yo'q — albatta .env da bo'lishi shart
-const ADMIN_PASS = process.env.ADMIN_PASS;
-if (!ADMIN_PASS) { console.error("❌ ADMIN_PASS env o'zgaruvchisi yo'q!"); process.exit(1); }
+.chart-card{background:var(--white);border-radius:14px;padding:20px;border:1px solid var(--border);margin-bottom:24px}
+.chart-title{font-size:15px;font-weight:700;margin-bottom:16px}
+.bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px}
+.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.bar{width:100%;background:var(--red);border-radius:6px 6px 0 0;transition:height .5s ease;min-height:2px;opacity:.85}
+.bar:hover{opacity:1}
+.bar-label{font-size:10px;color:var(--soft);font-weight:500}
+.bar-val{font-size:10px;color:var(--mid);font-weight:600}
 
-// ✅ FIX 5: BOT_TOKEN tekshiruvi — aks holda new TelegramBot(undefined) yiqiladi
-if (!BOT_TOKEN) { console.error("❌ BOT_TOKEN env o'zgaruvchisi yo'q!"); process.exit(1); }
-if (!process.env.TOKEN_SECRET || process.env.TOKEN_SECRET.length < 32) { console.error("❌ TOKEN_SECRET kamida 32 belgidan iborat bo‘lishi shart!"); process.exit(1); }
-if (!process.env.MONGO_URI) { console.error("❌ MONGO_URI env o'zgaruvchisi yo'q!"); process.exit(1); }
-if (!ADMIN_ID) { console.warn("⚠️ ADMIN_ID yo'q — buyurtmalar hech kimga yuborilmaydi!"); }
+.orders-card{background:var(--white);border-radius:14px;border:1px solid var(--border);overflow:hidden}
+.orders-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.orders-title{font-size:15px;font-weight:700}
+.filter-tabs{display:flex;gap:4px}
+.filter-tab{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--mid);transition:all .15s}
+.filter-tab.active{background:var(--red);color:#fff;border-color:var(--red)}
+.orders-table{width:100%;border-collapse:collapse}
+.orders-table th{padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:var(--soft);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+.orders-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle}
+.orders-table tr:last-child td{border-bottom:none}
+.orders-table tr:hover td{background:#fafafa}
+.orders-table tr.new-order td{background:#fffbeb;animation:newrow .5s ease}
+@keyframes newrow{from{background:#fef3c7}to{background:#fffbeb}}
+.order-id{font-weight:700;font-size:12px;color:var(--mid);font-family:monospace}
+.order-customer{font-weight:600}
+.order-phone{font-size:12px;color:var(--mid)}
+.order-items{font-size:12px;color:var(--mid);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.order-total{font-weight:700;color:var(--dark)}
+.order-date{font-size:12px;color:var(--soft)}
+.order-source{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.src-website{background:#dbeafe;color:#1e40af}
+.src-miniapp{background:#d1fae5;color:#065f46}
+.src-bot{background:#fef3c7;color:#92400e}
+.status-select{padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;border:1.5px solid;cursor:pointer;font-family:inherit;outline:none;background:var(--white);transition:all .15s}
+.s-new      {border-color:#fbbf24;color:#92400e;background:#fef3c7}
+.s-accepted {border-color:#60a5fa;color:#1e40af;background:#dbeafe}
+.s-cooking  {border-color:#f87171;color:#991b1b;background:#fee2e2}
+.s-delivered{border-color:#34d399;color:#065f46;background:#d1fae5}
+.s-cancelled{border-color:#d1d5db;color:#6b7280;background:#f3f4f6}
+.panel{display:none}.panel.active{display:block}
+.refresh-btn{padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--white);font-size:12px;font-weight:600;cursor:pointer;color:var(--mid);transition:all .15s;font-family:inherit}
+.refresh-btn:hover{background:var(--light)}
+.address-cell{font-size:12px;color:var(--mid);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.address-cell:hover{color:var(--blue);text-decoration:underline}
+.map-link{color:var(--blue);text-decoration:none;font-size:11px;font-weight:600}
+.empty-state{padding:48px;text-align:center;color:var(--soft);font-size:14px}
+.toast{position:fixed;top:20px;right:20px;background:var(--dark);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;transform:translateY(-80px);transition:transform .3s;display:flex;align-items:center;gap:8px}
+.toast.show{transform:translateY(0)}
+.notification{position:fixed;top:20px;right:20px;background:var(--white);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.12);z-index:999;width:300px;transform:translateX(340px);transition:transform .3s}
+.notification.show{transform:translateX(0)}
+.notif-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.notif-body{font-size:12px;color:var(--mid)}
+.notif-close{position:absolute;top:10px;right:12px;cursor:pointer;color:var(--soft);font-size:16px}
 
-const isProduction = !!WEBHOOK_URL;
-const bot = isProduction
-  ? new TelegramBot(BOT_TOKEN, { webHook: { port: false } })
-  : new TelegramBot(BOT_TOKEN, { polling: true });
+/* REPORTS PANEL */
+.report-card{background:var(--white);border-radius:14px;padding:20px;border:1px solid var(--border);text-align:center;cursor:pointer;transition:all .15s}
+.report-card:hover{border-color:var(--red);box-shadow:0 4px 16px rgba(232,52,42,.1)}
+.report-card .ric{font-size:32px;margin-bottom:8px}
+.report-card .rtitle{font-size:14px;font-weight:800;margin-bottom:4px}
+.report-card .rsub{font-size:12px;color:var(--soft)}
+.report-card .rbtn{margin-top:12px;padding:8px;background:var(--red);color:#fff;border-radius:8px;font-size:12px;font-weight:700}
+.report-card.loading .rbtn{opacity:.6}
+.date-input{padding:10px 12px;border:2px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px;outline:none;color:var(--dark);width:100%}
+.date-input:focus{border-color:var(--red)}
 
-// ✅ FIX: CORS faqat ruxsat etilgan domenlar
-app.use(cors({
-  origin: [
-    "https://holland-namangan.netlify.app",
-    "https://holland-bot.onrender.com",
-    ...(isProduction ? [] : ["http://localhost:5173", "http://localhost:3000"]),
-  ],
-  methods: ["GET","POST","PATCH"],
-}));
-app.disable("x-powered-by");
-app.set("trust proxy", 1);
-app.use(express.json({ limit: "100kb" }));
-app.use(express.static(path.join(__dirname, "public")));
+@media(max-width:768px){
+  .sidebar{width:60px;padding:16px 8px}
+  .sidebar-logo{font-size:0}.nav-item span{display:none}
+  .main{margin-left:60px;padding:16px}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .orders-table th:nth-child(4),.orders-table td:nth-child(4),
+  .orders-table th:nth-child(5),.orders-table td:nth-child(5){display:none}
+}
+</style>
+</head>
+<body>
 
-// ✅ FIX: Oddiy rate-limiter (express-rate-limit o'rnatmay)
-const rateLimitMap = new Map();
-function rateLimit(ip, maxPerMinute = 10) {
-  const now = Date.now();
-  const key = String(ip || "unknown");
-  if (rateLimitMap.size > 10000) {
-    for (const [k, value] of rateLimitMap) if (value.resetAt < now) rateLimitMap.delete(k);
-  }
-  const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + 60000 };
-  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60000; }
-  entry.count++;
-  rateLimitMap.set(key, entry);
-  return entry.count > maxPerMinute;
+<div id="app" style="display:none">
+<div class="sidebar">
+  <div class="sidebar-logo">🍔 <span>Holland</span></div>
+  <div class="nav-item active" onclick="showPanel('dashboard')"><span class="nav-icon">📊</span><span>Dashboard</span></div>
+  <div class="nav-item" onclick="showPanel('orders')"><span class="nav-icon">📦</span><span>Buyurtmalar</span></div>
+  <div class="nav-item" onclick="showPanel('stats')"><span class="nav-icon">📈</span><span>Statistika</span></div>
+  <div class="nav-item" onclick="showPanel('reports')"><span class="nav-icon">📥</span><span>Hisobotlar</span></div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="live-badge"><div class="live-dot"></div><span>Real vaqt</span></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="panel active" id="panel-dashboard">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Foydalanuvchilar</div><div class="stat-num" id="s-users">—</div><div class="stat-sub">Jami</div></div>
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-label">Bugungi buyurtmalar</div><div class="stat-num" id="s-today">—</div><div class="stat-sub" id="s-today-sub">Jami —</div></div>
+      <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-label">Jarayondagi</div><div class="stat-num" id="s-pending">—</div><div class="stat-sub">Yangi, qabul, pishirilmoqda</div></div>
+      <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-label">Bugungi tushum</div><div class="stat-num" id="s-revenue">—</div><div class="stat-sub" id="s-week-rev">Hafta: —</div></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Haftalik buyurtmalar</div>
+      <div class="bar-chart" id="bar-chart"></div>
+    </div>
+
+    <div class="orders-card">
+      <div class="orders-header">
+        <div class="orders-title">Oxirgi buyurtmalar</div>
+        <button class="refresh-btn" onclick="loadOrders()">Yangilash</button>
+      </div>
+      <div id="dashboard-orders-body"></div>
+    </div>
+  </div>
+
+  <!-- ORDERS -->
+  <div class="panel" id="panel-orders">
+    <div class="orders-card">
+      <div class="orders-header">
+        <div class="orders-title">Barcha buyurtmalar</div>
+        <div class="filter-tabs">
+          <div class="filter-tab active" onclick="filterOrders('all',this)">Hammasi</div>
+          <div class="filter-tab" onclick="filterOrders('new',this)">Yangi</div>
+          <div class="filter-tab" onclick="filterOrders('accepted',this)">Qabul</div>
+          <div class="filter-tab" onclick="filterOrders('cooking',this)">Pishirilmoqda</div>
+          <div class="filter-tab" onclick="filterOrders('delivered',this)">Yetkazildi</div>
+        </div>
+      </div>
+      <div id="orders-body"></div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="panel" id="panel-stats">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-label">Haftalik buyurtmalar</div><div class="stat-num" id="ss-week">—</div></div>
+      <div class="stat-card"><div class="stat-icon">💵</div><div class="stat-label">Haftalik tushum</div><div class="stat-num" id="ss-week-rev">—</div></div>
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-label">Jami buyurtmalar</div><div class="stat-num" id="ss-total">—</div></div>
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Jami mijozlar</div><div class="stat-num" id="ss-users">—</div></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Holat bo'yicha taqsimot</div>
+      <div id="status-bars"></div>
+    </div>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="panel" id="panel-reports">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px" id="report-cards">
+      <div class="report-card" onclick="downloadReport('today',this)">
+        <div class="ric">☀️</div>
+        <div class="rtitle">Bugungi</div>
+        <div class="rsub" id="r-today-label">—</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+      <div class="report-card" onclick="downloadReport('weekly',this)">
+        <div class="ric">📅</div>
+        <div class="rtitle">Haftalik</div>
+        <div class="rsub">So'nggi 7 kun</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+      <div class="report-card" onclick="downloadReport('monthly',this)">
+        <div class="ric">📆</div>
+        <div class="rtitle">Oylik</div>
+        <div class="rsub" id="r-month-label">—</div>
+        <div class="rbtn">📥 Excel yuklash</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">📋 Ixtiyoriy sana oralig'i</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:12px;font-weight:600;color:var(--mid);margin-bottom:6px">Boshlanish</div>
+          <input type="date" id="r-from" class="date-input"/>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:12px;font-weight:600;color:var(--mid);margin-bottom:6px">Tugash</div>
+          <input type="date" id="r-to" class="date-input"/>
+        </div>
+        <button onclick="downloadCustomReport(this)" style="padding:10px 20px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">
+          📥 Excel yuklash
+        </button>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">📈 Tezkor ko'rinish</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Haftalik tushum</div>
+          <div style="font-size:20px;font-weight:800;color:var(--red)" id="r-week-sum">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Oylik tushum</div>
+          <div style="font-size:20px;font-weight:800;color:var(--red)" id="r-month-sum">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Haftalik buyurtmalar</div>
+          <div style="font-size:20px;font-weight:800" id="r-week-count">—</div>
+        </div>
+        <div style="background:var(--light);border-radius:10px;padding:14px">
+          <div style="font-size:11px;color:var(--soft);font-weight:600;margin-bottom:4px">Oylik buyurtmalar</div>
+          <div style="font-size:20px;font-weight:800" id="r-month-count">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+<div class="notification" id="notif">
+  <div class="notif-close" onclick="closeNotif()">✕</div>
+  <div class="notif-title" id="notif-title"></div>
+  <div class="notif-body" id="notif-body"></div>
+</div>
+
+<script>
+const API = '';
+const STATUS_LABELS = {new:'🆕 Yangi',accepted:'✅ Qabul',cooking:'🍳 Tayyorlanmoqda',delivered:'🚀 Yetkazildi',cancelled:'❌ Bekor'};
+const STATUS_CLASS  = {new:'s-new',accepted:'s-accepted',cooking:'s-cooking',delivered:'s-delivered',cancelled:'s-cancelled'};
+const STATUS_OPTS   = ['new','accepted','cooking','delivered','cancelled'];
+const SOURCE_LABELS = {website:'🌐 Sayt',miniapp:'📱 App',bot:'🤖 Bot'};
+const SOURCE_CLASS  = {website:'src-website',miniapp:'src-miniapp',bot:'src-bot'};
+
+function fmt(n){ return new Intl.NumberFormat('uz-UZ').format(Math.round(n)); }
+function fmtDate(d){ return new Date(d).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+
+// ── AUTH ──
+let TOKEN = sessionStorage.getItem('admin_token') || '';
+function getHeaders(){ return { 'Content-Type':'application/json', 'Authorization': 'Bearer '+TOKEN }; }
+
+
+function showLogin(errMsg){
+  document.getElementById('app').style.display='none';
+  const loginDiv = document.getElementById('login-screen');
+  loginDiv.style.display='flex';
+  if(errMsg) document.getElementById('login-err').textContent = errMsg;
+}
+function hideLogin(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='';
 }
 
-// ══════════════════════════════════════════
-//  MongoDB
-// ══════════════════════════════════════════
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB ulandi"))
-  .catch(e => { console.error("❌ MongoDB:", e.message); process.exit(1); });
-
-const UserSchema = new mongoose.Schema({
-  userId:    { type: Number, unique: true },
-  firstName: String,
-  username:  String,
-  joinedAt:  { type: Date, default: Date.now },
-});
-const User = mongoose.model("User", UserSchema);
-
-const OrderSchema = new mongoose.Schema({
-  userId:        Number,
-  name:          String,
-  phone:         String,
-  address:       String,
-  note:          { type: String, default: "" },
-  gpsLat:        Number,
-  gpsLng:        Number,
-  items:         Array,   // { name, qty, price } — narx serverdan
-  total:         Number,  // serverda hisoblangan
-  status:        { type: String, default: "new" },
-  source:        { type: String, default: "miniapp" },
-  paymentMethod: { type: String, default: "cash" },
-}, { timestamps: true });
-
-// ✅ FIX: Indekslar
-OrderSchema.index({ userId: 1 });
-OrderSchema.index({ createdAt: -1 });
-OrderSchema.index({ status: 1 });
-const Order = mongoose.model("Order", OrderSchema);
-
-// ══════════════════════════════════════════
-//  MENU — yagona manba (server + bot + API)
-// ══════════════════════════════════════════
-const CATEGORIES = [
-  { id: "free", label: "Holland Free",  desc: "Issiq va mazali kartoshka fri" },
-  { id: "burger", label: "Burger",        desc: "Shirador burger va sandvichlar" },
-  { id: "hotdog", label: "Hot-dog",       desc: "Klassik va asl hot-doglar" },
-  { id: "sous", label: "Sous",          desc: "Turli xil sous va qo'shimchalar" },
-  { id: "drink", label: "Ichimliklar",   desc: "Sovuq va shirin ichimliklar" },
-];
-
-const MENU = [
-  { id:"1",  cat:"free",   name:"Free Holland",              price:19000,  img:"free-classik.jpg"     },
-  { id:"2",  cat:"free",   name:"Free Holland Big",          price:23000,  img:"free-classik.jpg"     },
-  { id:"3",  cat:"free",   name:"Free Holland Special",      price:35000,  img:"special.jpg"          },
-  { id:"4",  cat:"free",   name:"Loaded Fries",              price:32000,  img:"loaded.png"           },
-  { id:"5",  cat:"free",   name:"Loaded Fries & Sausage",    price:28000,  img:"Loaded fries.jpg"     },
-  { id:"6",  cat:"free",   name:"Loaded Cheese",             price:26000,  img:"loaded-cheese.jpg"    },
-  { id:"7",  cat:"free",   name:"Chicken Cheese",            price:42000,  img:"Chickencheese.jpg"    },
-  { id:"8",  cat:"free",   name:"Crispy Chicken",            price:38000,  img:"crispy.jpg"           },
-  { id:"9",  cat:"free",   name:"Beef Box",                  price:55000,  img:"bifbox.jpg"           },
-  { id:"13", cat:"free",   name:"Kapsalan (lahm)",           price:75000,  img:"kapsalan.jpg"         },
-  { id:"14", cat:"free",   name:"Kapsalan (qiyma)",          price:58000,  img:"kapsalan.jpg"         },
-  { id:"15", cat:"free",   name:"Berlin Style (lahm)",       price:58000,  img:"berlin.jpg"           },
-  { id:"16", cat:"free",   name:"Berlin Style (qiyma)",      price:48000,  img:"berlin.jpg"           },
-  { id:"17", cat:"free",   name:"Briosh Steak Box",          price:65000,  img:"BrioshSteak.jpg"      },
-  { id:"10", cat:"burger", name:"Chicken Burger",            price:35000,  img:"burger.jpg"           },
-  { id:"19", cat:"burger", name:"Bon File (lahm)",           price:48000,  img:"Bonfile.jpg"          },
-  { id:"20", cat:"burger", name:"Bon File (qiyma)",          price:38000,  img:"Bonfile.jpg"          },
-  { id:"11", cat:"hotdog", name:"Hot-Dog Classic",           price:15000,  img:"hotdog.jpg"           },
-  { id:"12", cat:"hotdog", name:"Hot-Dog Canada",            price:20000,  img:"hotdog-canada.jpg"    },
-  { id:"18", cat:"hotdog", name:"Free-Dog",                  price:28000,  img:"free-dog.jpg"         },
-  { id:"21", cat:"sous",   name:"Berlin Sous",               price:4000,   img:"berlinSous.png"       },
-  { id:"22", cat:"sous",   name:"Burger Sous",               price:4000,   img:"burgerSous.png"       },
-  { id:"23", cat:"sous",   name:"BBQ Sous",                  price:4000,   img:"bbq.png"              },
-  { id:"24", cat:"sous",   name:"Ketchup-Mayonez",           price:4000,   img:"ketchup.png"          },
-  { id:"25", cat:"drink",  name:"Sprite Mojito 0.5L",        price:8000,   img:"sprite-moxito.jpg"    },
-  { id:"26", cat:"drink",  name:"Sprite 0.5L",               price:8000,   img:"sprite.jpg"           },
-  { id:"27", cat:"drink",  name:"Sprite 0.25L",              price:7000,   img:"sprite-banochniy.jpg" },
-  { id:"28", cat:"drink",  name:"Fanta 0.25L (banka)",   price:7000,   img:"fanta-banochniy.jpg"  },
-  { id:"30", cat:"drink",  name:"Fanta 0.25L (plastik)",     price:10000,  img:"fanta.jpg"            },
-  { id:"32", cat:"drink",  name:"Coca Cola 0.25L (banka)",           price:7000,   img:"cola-banochniy.jpg"   },
-  { id:"34", cat:"drink",  name:"Coca Cola (shisha)",        price:10000,  img:"cola.jpg"             },
-  { id:"35", cat:"drink",  name:"Fuse Tea 0.5L",             price:10000,  img:"fusetea-banochniy.jpg"},
-  { id:"37", cat:"drink",  name:"Bonaqua 0.5L",              price:3000,   img:"bon-aqua.jpg"         },
-  { id:"38", cat:"drink",  name:"Cappy Pulpy 0.5L",          price:8000,   img:"cappy.jpg"            },
-];
-
-// ✅ FIX 1a: Narxni serverda hisoblash
-const MENU_MAP = Object.fromEntries(MENU.map(m => [m.id, m]));
-
-function calcOrder(clientItems) {
-  const errors = [];
-  const items  = [];
-  let total    = 0;
-
-  for (const it of clientItems) {
-    const menuItem = MENU_MAP[String(it.id || it.productId)];
-    if (!menuItem) { errors.push(`Noma'lum mahsulot: ${it.id}`); continue; }
-    const qty = Number(it.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 20) { errors.push("Mahsulot miqdori noto'g'ri"); continue; }
-    const lineTotal = menuItem.price * qty;
-    total += lineTotal;
-    items.push({ id: menuItem.id, name: menuItem.name, price: menuItem.price, qty });
-  }
-
-  return { items, total, errors };
-}
-
-// ✅ FIX 2d: Markdown escape
-function escMd(text) {
-  return String(text || "").replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
-}
-
-function fmt(n) { return new Intl.NumberFormat("uz-UZ").format(n); }
-
-// ✅ FIX 1d: XSS uchun HTML escape
-function escHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-const STATUS = {
-  new:       "🆕 Yangi",
-  accepted:  "✅ Qabul qilindi",
-  cooking:   "🍳 Tayyorlanmoqda",
-  delivered: "🚀 Yetkazildi",
-  cancelled: "❌ Bekor qilindi",
-};
-
-// ══════════════════════════════════════════
-//  ADMIN TOKEN — signed, expiring sessions
-// ══════════════════════════════════════════
-const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
-const SSE_TICKET_MS = 60 * 1000;
-function signAdmin(value) {
-  return crypto.createHmac("sha256", process.env.TOKEN_SECRET)
-    .update("holland-admin:" + ADMIN_PASS + ":" + value).digest("hex");
-}
-function createSignedToken(purpose, ttl) {
-  const expires = Date.now() + ttl;
-  const nonce = crypto.randomBytes(16).toString("hex");
-  const payload = purpose + "." + expires + "." + nonce;
-  return payload + "." + signAdmin(payload);
-}
-function verifySignedToken(token, purpose) {
-  if (typeof token !== "string" || token.length > 300) return false;
-  const parts = token.split(".");
-  if (parts.length !== 4 || parts[0] !== purpose || !/^\d{13}$/.test(parts[1]) ||
-      !/^[a-f0-9]{32}$/.test(parts[2]) || !/^[a-f0-9]{64}$/.test(parts[3])) return false;
-  const expires = Number(parts[1]);
-  const ttl = purpose === "sse" ? SSE_TICKET_MS : ADMIN_SESSION_MS;
-  if (expires <= Date.now() || expires > Date.now() + ttl) return false;
-  const expected = signAdmin(parts.slice(0, 3).join("."));
-  return crypto.timingSafeEqual(Buffer.from(parts[3], "hex"), Buffer.from(expected, "hex"));
-}
-function checkBearer(req) {
-  const auth = req.headers["authorization"] || "";
-  return auth.startsWith("Bearer ") && verifySignedToken(auth.slice(7), "admin");
-}
-function checkSseToken(req) {
-  return verifySignedToken(req.query.token, "sse");
-}
-
-// ══════════════════════════════════════════
-//  TELEGRAM initData TEKSHIRUVI (HMAC-SHA256)
-//  ✅ FIX 1b: userId ni soxtalashtirib bo'lmaydi
-//  Rasmiy algoritm: core.telegram.org/bots/webapps#validating-data
-// ══════════════════════════════════════════
-function verifyTelegramInitData(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  try {
-    const params = new URLSearchParams(initData);
-    const hash   = params.get("hash");
-    if (!hash) return null;
-    params.delete("hash");
-
-    // Kalitlarni alifbo tartibida joylash
-    const dataCheckString = [...params.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join("\n");
-
-    // secret_key = HMAC_SHA256("WebAppData", bot_token)
-    const secretKey = crypto.createHmac("sha256", "WebAppData").update(BOT_TOKEN).digest();
-    const computed  = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-
-    if (computed !== hash) return null;
-
-    // auth_date — 24 soatdan eski bo'lmasin
-    const authDate = Number(params.get("auth_date") || 0);
-    if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
-
-    const userRaw = params.get("user");
-    if (!userRaw) return null;
-    const user = JSON.parse(userRaw);
-    return user?.id ? user : null;
+async function doLogin(){
+  const pass = document.getElementById('login-pass').value.trim();
+  if(!pass){ document.getElementById('login-err').textContent='Parol kiriting'; return; }
+  try{
+    const r = await fetch(`${API}/api/admin/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ pass })
+    });
+    const data = await r.json();
+    if(!data.success){ document.getElementById('login-err').textContent='Parol noto\'g\'ri'; return; }
+    TOKEN = data.token;
+    sessionStorage.setItem('admin_token', TOKEN);
+    hideLogin();
+    init();
   } catch {
-    return null;
+    document.getElementById('login-err').textContent='Server bilan bog\'lanib bo\'lmadi';
   }
 }
-
-// ══════════════════════════════════════════
-//  SSE
-// ══════════════════════════════════════════
-const clients      = new Map();
-const adminClients = new Set();
-
-function addClient(userId, res) {
-  if (!clients.has(userId)) clients.set(userId, []);
-  clients.get(userId).push(res);
+function doLogout(){
+  TOKEN = '';
+  sessionStorage.removeItem('admin_token');
+  if(activeSse){ activeSse.close(); activeSse=null; }
+  clearTimeout(sseReconnectTimer);
+  showLogin();
 }
-function removeClient(userId, res) {
-  if (!clients.has(userId)) return;
-  const list = clients.get(userId).filter(r => r !== res);
-  if (!list.length) clients.delete(userId); else clients.set(userId, list);
-}
-function sendToUser(userId, event, data) {
-  (clients.get(userId) || []).forEach(res => {
-    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
+
+let allOrders=[], statsData={}, currentFilter='all';
+
+function showPanel(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach((n,i)=>{
+    n.classList.toggle('active',['dashboard','orders','stats','reports'][i]===name);
   });
+  document.getElementById('panel-'+name).classList.add('active');
+  document.getElementById('page-title').textContent={dashboard:'Dashboard',orders:'Buyurtmalar',stats:'Statistika',reports:'Hisobotlar'}[name];
+  if(name==='orders') renderOrdersTable(allOrders, currentFilter);
+  if(name==='reports') loadReportStats();
 }
-function sendToAdmin(event, data) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  adminClients.forEach(res => { try { res.write(msg); } catch {} });
+
+async function loadStats(){
+  try{
+    const r = await fetch(`${API}/api/admin/stats`, { headers: getHeaders() });
+    if(r.status===401){ showLogin('Sessiya tugadi. Qayta kiring.'); return; }
+    statsData = await r.json();
+    document.getElementById('s-users').textContent=fmt(statsData.users||0);
+    document.getElementById('s-today').textContent=fmt(statsData.todayOrders||0);
+    document.getElementById('s-today-sub').textContent='Jami '+fmt(statsData.totalOrders||0);
+    document.getElementById('s-pending').textContent=fmt(statsData.pending||0);
+    document.getElementById('s-revenue').textContent=fmt(statsData.todaySum||0)+' so\'m';
+    document.getElementById('s-week-rev').textContent='Hafta: '+fmt(statsData.weekSum||0)+' so\'m';
+    document.getElementById('ss-week').textContent=fmt(statsData.weekOrders||0);
+    document.getElementById('ss-week-rev').textContent=fmt(statsData.weekSum||0)+' so\'m';
+    document.getElementById('ss-total').textContent=fmt(statsData.totalOrders||0);
+    document.getElementById('ss-users').textContent=fmt(statsData.users||0);
+    renderBarChart(statsData.daily||[]);
+    renderStatusBars(statsData.statusCounts||[]);
+  } catch(e){ console.error(e); }
 }
-function broadcastStats() {
-  (async () => {
-    // ✅ FIX: Ulangan mijoz bo'lmasа skip
-    if (clients.size === 0 && adminClients.size === 0) return;
-    const [users, orders] = await Promise.all([User.countDocuments(), Order.countDocuments()]);
-    const msg = `event: stats\ndata: ${JSON.stringify({ users, orders })}\n\n`;
-    clients.forEach(list => list.forEach(res => { try { res.write(msg); } catch {} }));
-    adminClients.forEach(res => { try { res.write(msg); } catch {} });
-  })();
+
+function renderBarChart(daily){
+  const el=document.getElementById('bar-chart');
+  if(!daily.length){el.innerHTML='<div style="color:var(--soft);font-size:13px;padding:20px">Ma\'lumot yo\'q</div>';return;}
+  const max=Math.max(...daily.map(d=>d.count),1);
+  const single = daily.length === 1;
+  el.style.justifyContent = single ? 'center' : 'flex-start';
+  el.innerHTML = daily.map(d=>{
+    const h=Math.max(Math.round((d.count/max)*90),8);
+    const date=new Date(d._id).toLocaleDateString('uz-UZ',{day:'2-digit',month:'2-digit',weekday:'short'});
+    return `<div class="bar-wrap" style="${single?'max-width:120px':''}">
+      <div class="bar-val">${d.count} ta</div>
+      <div class="bar" style="height:${h}px;${single?'border-radius:10px;background:linear-gradient(180deg,#ff6b5e,#E8342A)':''}" title="${d._id}: ${d.count} buyurtma, ${fmt(d.total)} so'm"></div>
+      <div class="bar-label">${date}</div>
+    </div>`;
+  }).join('');
 }
-setInterval(broadcastStats, 30000);
 
-// ✅ FIX 1c: SSE — faqat o'z buyurtmalarini ko'ra oladi (Telegram initData tekshiruvi)
-app.get("/api/stream/:userId", (req, res) => {
-  const userId = Number(req.params.userId);
+function renderStatusBars(counts){
+  const el=document.getElementById('status-bars');
+  const total=counts.reduce((s,c)=>s+c.count,0)||1;
+  el.innerHTML=counts.map(c=>{
+    const pct=Math.round(c.count/total*100);
+    const label=STATUS_LABELS[c._id]||c._id;
+    const colors={new:'#f59e0b',accepted:'#3b82f6',cooking:'#ef4444',delivered:'#10b981',cancelled:'#9ca3af'};
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
+        <span style="font-weight:600">${label}</span>
+        <span style="color:var(--mid)">${c.count} ta (${pct}%)</span>
+      </div>
+      <div style="height:8px;background:#f3f4f6;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${colors[c._id]||'#9ca3af'};border-radius:4px;transition:width .5s"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  // ✅ FIX 1c: SSE ham himoyalangan — faqat o'z ma'lumotlarini oladi
-  const tgUser = verifyTelegramInitData(req.query.initData || "");
-  const authorized = tgUser && tgUser.id === userId;
+async function loadOrders(filter='all'){
+  try{
+    const f=filter!=='all'?`&status=${filter}`:'';
+    const r=await fetch(`${API}/api/admin/orders?limit=50${f}`, { headers: getHeaders() });
+    if(r.status===401){ showLogin('Sessiya tugadi. Qayta kiring.'); return; }
+    const data=await r.json();
+    allOrders=data.orders||[];
+    renderDashboardOrders(allOrders.slice(0,10));
+    renderOrdersTable(allOrders, currentFilter);
+  } catch(e){ console.error(e); }
+}
 
-  res.setHeader("Content-Type",  "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection",    "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "https://holland-namangan.netlify.app");
-  res.flushHeaders();
-  res.write(`event: connected\ndata: {"ok":true}\n\n`);
-
-  (async () => {
-    // Statistika hammaga ochiq (shaxsiy ma'lumot emas)
-    const [users, orders] = await Promise.all([User.countDocuments(), Order.countDocuments()]);
-    res.write(`event: stats\ndata: ${JSON.stringify({ users, orders })}\n\n`);
-
-    // Buyurtmalar faqat tasdiqlangan foydalanuvchiga
-    if (authorized) {
-      const userOrders = await Order.find({ userId }).sort({ createdAt: -1 }).limit(10)
-        .select("-gpsLat -gpsLng -__v");
-      res.write(`event: orders\ndata: ${JSON.stringify(userOrders)}\n\n`);
-    }
-  })();
-
-  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 20000);
-  // Faqat tasdiqlangan foydalanuvchi holat yangilanishlarini oladi
-  if (authorized) addClient(userId, res);
-  req.on("close", () => { clearInterval(ping); if (authorized) removeClient(userId, res); });
+// ✅ FIX 1d: XSS himoyasi — mijoz kiritgan barcha matn escape qilinadi
+function esc(s){
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Address copying uses event delegation, never inline JavaScript.
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-copy-address]');
+  if (target) copyAddr(target.dataset.copyAddress || '');
 });
-
-app.post("/api/admin/sse-ticket", (req, res) => {
-  if (!checkBearer(req)) return res.status(401).json({ error: "Ruxsat yo‘q" });
-  res.setHeader("Cache-Control", "no-store");
-  res.json({ ticket: createSignedToken("sse", SSE_TICKET_MS) });
-});
-
-app.get("/api/admin/stream", (req, res) => {
-  if (!checkSseToken(req)) return res.status(401).end();
-  res.setHeader("Content-Type",  "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection",    "keep-alive");
-  res.flushHeaders();
-  res.write(`event: connected\ndata: {"ok":true}\n\n`);
-  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 20000);
-  adminClients.add(res);
-  req.on("close", () => { clearInterval(ping); adminClients.delete(res); });
-});
-
-// ══════════════════════════════════════════
-//  Keyboards
-// ══════════════════════════════════════════
-function mainKb() {
-  return {
-    keyboard: [
-      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-      [{ text: "📋 Menu ko'rish" }, { text: "📦 Buyurtmalarim" }],
-      [{ text: "ℹ️ Biz haqimizda" }, { text: "📞 Bog'lanish" }],
-    ],
-    resize_keyboard: true, persistent: true,
-  };
-}
-function menuKb() {
-  return {
-    inline_keyboard: [
-      ...CATEGORIES.map(c => [{ text: `${c.label}`, callback_data: `cat_${c.id}` }]),
-      [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-    ],
-  };
-}
-function catProductsKb(catId, page = 0) {
-  const items   = MENU.filter(m => m.cat === catId);
-  const perPage = 5;
-  const start   = page * perPage;
-  const rows    = items.slice(start, start + perPage)
-    .map(p => [{ text: `${p.name} — ${fmt(p.price)} so'm`, callback_data: `prod_${p.id}` }]);
-  const nav = [];
-  if (page > 0) nav.push({ text: "⬅️ Ortga", callback_data: `page_${catId}_${page - 1}` });
-  if (start + perPage < items.length) nav.push({ text: "Keyingi ➡️", callback_data: `page_${catId}_${page + 1}` });
-  if (nav.length) rows.push(nav);
-  rows.push([{ text: "🔙 Kategoriyalar", callback_data: "show_menu" }]);
-  rows.push([{ text: "🛒 Buyurtma berish", web_app: { url: MINI_APP_URL } }]);
-  return { inline_keyboard: rows };
-}
-function adminKb(id) {
-  return { inline_keyboard: [
-    [{ text: "✅ Qabul",          callback_data: `s_${id}_accepted`  },
-     { text: "🍳 Tayyorlanmoqda", callback_data: `s_${id}_cooking`   }],
-    [{ text: "🚀 Yetkazildi",     callback_data: `s_${id}_delivered` },
-     { text: "❌ Bekor",           callback_data: `s_${id}_cancelled` }],
-  ]};
+function orderRowHTML(o, highlight=false){
+  const id=(o._id||o.id||'').toString().replace(/[^a-zA-Z0-9]/g,'');
+  const shortId=esc(id.slice(-6).toUpperCase());
+  const items=esc((o.items||[]).map(i=>i.name+' ×'+i.qty).join(', '));
+  const lat=Number(o.gpsLat), lng=Number(o.gpsLng);
+  const gpsLink=(lat&&lng)?`<a class="map-link" href="https://maps.google.com/?q=${lat},${lng}" target="_blank" rel="noopener">🗺</a> `:'';
+  const src = ['website','miniapp','bot'].includes(o.source) ? o.source : 'miniapp';
+  const status = STATUS_OPTS.includes(o.status) ? o.status : 'new';
+  return `<tr id="row-${id}" class="${highlight?'new-order':''}">
+    <td><div class="order-id">#${shortId}</div><div class="order-date">${esc(fmtDate(o.createdAt||o.created_at))}</div><span class="order-source ${SOURCE_CLASS[src]}">${SOURCE_LABELS[src]}</span></td>
+    <td><div class="order-customer">${esc(o.name)}</div><div class="order-phone">${esc(o.phone)}</div></td>
+    <td><div class="order-items" title="${items}">${items}</div></td>
+    <td><div class="address-cell" title="${esc(o.address)}" data-copy-address="${esc(o.address)}">
+      ${gpsLink}${esc(o.address)}</div></td>
+    <td><div class="order-total">${esc(fmt(o.total))} so'm</div></td>
+    <td>
+      <select class="status-select ${STATUS_CLASS[status]}" onchange="changeStatus('${id}',this)">
+        ${STATUS_OPTS.map(s=>`<option value="${s}"${s===status?' selected':''}>${STATUS_LABELS[s]}</option>`).join('')}
+      </select>
+    </td>
+  </tr>`;
 }
 
-async function saveUser(msg) {
-  try {
-    await User.findOneAndUpdate(
-      { userId: msg.chat.id },
-      { userId: msg.chat.id, firstName: msg.chat.first_name, username: msg.chat.username },
-      { upsert: true }
-    );
+function renderDashboardOrders(orders){
+  const el=document.getElementById('dashboard-orders-body');
+  if(!orders.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
+  el.innerHTML=`<table class="orders-table">
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <tbody>${orders.map(o=>orderRowHTML(o)).join('')}</tbody>
+  </table>`;
+}
+
+function renderOrdersTable(orders, filter){
+  const el=document.getElementById('orders-body');
+  const filtered=filter==='all'?orders:orders.filter(o=>o.status===filter);
+  if(!filtered.length){el.innerHTML='<div class="empty-state">Buyurtmalar yo\'q</div>';return;}
+  el.innerHTML=`<table class="orders-table">
+    <thead><tr><th>ID / Vaqt</th><th>Mijoz</th><th>Mahsulotlar</th><th>Manzil</th><th>Jami</th><th>Holat</th></tr></thead>
+    <tbody>${filtered.map(o=>orderRowHTML(o)).join('')}</tbody>
+  </table>`;
+}
+
+function filterOrders(status,el){
+  currentFilter=status;
+  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderOrdersTable(allOrders, status);
+}
+
+async function changeStatus(id, selectEl){
+  const status=selectEl.value;
+  selectEl.className='status-select '+STATUS_CLASS[status];
+  try{
+    await fetch(`${API}/api/admin/orders/${id}`,{
+      method:'PATCH', headers: getHeaders(), body: JSON.stringify({ status })
+    });
+    toast('✅ Holat yangilandi: '+STATUS_LABELS[status]);
+    const row=document.getElementById('row-'+id);
+    if(row) row.querySelectorAll('.status-select').forEach(s=>{ s.value=status; s.className='status-select '+STATUS_CLASS[status]; });
+    loadStats();
+  } catch { toast('❌ Xatolik yuz berdi'); }
+}
+
+function copyAddr(addr){
+  navigator.clipboard.writeText(addr).then(()=>toast('📋 Manzil nusxa olindi'));
+}
+
+// ── REPORTS — Bearer token bilan blob orqali yuklab olish ──
+async function triggerDownload(url, filename){
+  const r = await fetch(url, { headers: getHeaders() });
+  if(r.status===401){ showLogin('Sessiya tugadi. Qayta kiring.'); throw new Error('401'); }
+  if(!r.ok) throw new Error('Server xatosi');
+  const blob = await r.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(objUrl);
+}
+
+async function downloadReport(type, cardEl){
+  cardEl?.classList.add('loading');
+  try{
+    const fname = `Holland_${type}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    await triggerDownload(`${API}/api/admin/report/${type}`, fname);
+    toast('📥 Hisobot yuklandi');
+  } catch(e){ if(e.message!=='401') toast('❌ Yuklab bo\'lmadi'); }
+  finally { cardEl?.classList.remove('loading'); }
+}
+
+async function downloadCustomReport(btnEl){
+  const from = document.getElementById('r-from').value;
+  const to   = document.getElementById('r-to').value;
+  if(!from || !to){ toast('❌ Sanalarni kiriting'); return; }
+  btnEl.style.opacity='.6';
+  try{
+    const fname = `Holland_hisobot_${from}_${to}.xlsx`;
+    await triggerDownload(`${API}/api/admin/report/custom?from=${from}&to=${to}`, fname);
+    toast('📥 Hisobot yuklandi');
+  } catch(e){ if(e.message!=='401') toast('❌ Yuklab bo\'lmadi'); }
+  finally { btnEl.style.opacity='1'; }
+}
+
+async function loadReportStats(){
+  document.getElementById('r-month-label').textContent =
+    new Date().toLocaleString('uz-UZ', { month: 'long', year: 'numeric' });
+  document.getElementById('r-today-label').textContent = new Date().toLocaleDateString('uz-UZ');
+  const today = new Date().toISOString().slice(0,10);
+  const week  = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+  if(!document.getElementById('r-from').value) document.getElementById('r-from').value = week;
+  if(!document.getElementById('r-to').value)   document.getElementById('r-to').value   = today;
+  try{
+    const r = await fetch(`${API}/api/admin/stats`, { headers: getHeaders() });
+    const d = await r.json();
+    document.getElementById('r-week-sum').textContent   = fmt(d.weekSum||0)+' so\'m';
+    document.getElementById('r-month-sum').textContent  = fmt(d.monthSum||0)+' so\'m';
+    document.getElementById('r-week-count').textContent = d.weekOrders||0;
+    document.getElementById('r-month-count').textContent= d.monthOrders||0;
   } catch {}
 }
 
-// ══════════════════════════════════════════
-//  WEBHOOK
-// ══════════════════════════════════════════
-if (isProduction) {
-  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
-  app.post(`/bot${BOT_TOKEN}`, (req, res) => { bot.processUpdate(req.body); res.sendStatus(200); });
-  console.log("✅ Webhook rejimida");
+// ── SSE ──
+let activeSse = null;
+let sseReconnectTimer = null;
+async function connectSSE(){
+  if(!TOKEN) return;
+  if(activeSse) activeSse.close();
+  clearTimeout(sseReconnectTimer);
+  let ticket;
+  try {
+    const r = await fetch(`${API}/api/admin/sse-ticket`, {method:'POST',headers:getHeaders()});
+    if(r.status===401){ doLogout(); return; }
+    if(!r.ok) throw new Error('SSE ticket error');
+    ticket = (await r.json()).ticket;
+  } catch {
+    sseReconnectTimer=setTimeout(connectSSE,5000);
+    return;
+  }
+  if(!TOKEN) return;
+  const sse=new EventSource(`${API}/api/admin/stream?token=${encodeURIComponent(ticket)}`);
+  activeSse=sse;
+  sse.addEventListener('new_order', e=>{
+    const {order}=JSON.parse(e.data);
+    if(order){
+      allOrders.unshift(order);
+      renderDashboardOrders(allOrders.slice(0,10));
+      renderOrdersTable(allOrders, currentFilter);
+    }
+    showNotif('🛎 Yangi buyurtma!',`${order?.name||''} — ${fmt(order?.total||0)} so'm`);
+    loadStats();
+  });
+  sse.addEventListener('order_updated', e=>{
+    const {orderId,status}=JSON.parse(e.data);
+    const o=allOrders.find(x=>(x._id||x.id||'').toString()===orderId);
+    if(o){ o.status=status; }
+    document.querySelectorAll('.status-select').forEach(sel=>{
+      const row=sel.closest('tr');
+      if(row&&row.id===`row-${orderId}`){ sel.value=status; sel.className='status-select '+STATUS_CLASS[status]; }
+    });
+    loadStats();
+  });
+  sse.onerror=()=>{ sse.close(); if(activeSse===sse) activeSse=null; clearTimeout(sseReconnectTimer); sseReconnectTimer=setTimeout(connectSSE,5000); };
 }
 
-// ══════════════════════════════════════════
-//  BOT HANDLERS
-// ══════════════════════════════════════════
-bot.onText(/\/start/, async (msg) => {
-  const id = msg.chat.id, name = msg.chat.first_name || "Mehmon";
-  await saveUser(msg);
-  const [userCount, lastOrder] = await Promise.all([
-    User.countDocuments(),
-    Order.findOne({ userId: id }).sort({ createdAt: -1 }),
-  ]);
-  let text = `🍔 *Holland Fast Food*\n\nAssalomu alaykum, *${escMd(name)}*\\! 👋\n\n`;
-  text += `┌ ⚡ Yetkazib berish: *Buyurtma asosidaa*\n`;
-  text += `├ ✅ Mahsulot: *100% Halol*\n`;
-  text += `├ 🔥 Taom: *Har doim issiq*\n`;
-  text += `└ 👥 Mijozlar: *${userCount} ta*\n\n`;
-  if (lastOrder) {
-    text += `📦 *So'nggi buyurtma:*\n`;
-    text += `\\#${escMd(lastOrder._id.toString().slice(-6).toUpperCase())} — ${STATUS[lastOrder.status]}\n\n`;
-  }
-  text += `👇 Quyidagi tugmani bosib buyurtma bering\\!`;
-  await bot.sendMessage(id, text, {
-    parse_mode: "MarkdownV2",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }],
-        [{ text: "📋 Menu ko'rish", callback_data: "show_menu" },
-         { text: "📦 Buyurtmalarim", callback_data: "my_orders" }],
-      ],
-    },
-  });
-  await bot.sendMessage(id, "Pastdagi tugmalardan ham foydalanishingiz mumkin 👇", { reply_markup: mainKb() });
-});
+let notifTimer;
+function showNotif(title,body){
+  document.getElementById('notif-title').textContent=title;
+  document.getElementById('notif-body').textContent=body;
+  const n=document.getElementById('notif');
+  n.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer=setTimeout(()=>n.classList.remove('show'),6000);
+  if(Notification.permission==='granted') new Notification(title,{body});
+}
+function closeNotif(){ document.getElementById('notif').classList.remove('show'); }
 
-bot.onText(/\/admin/, async (msg) => {
-  if (msg.chat.id !== ADMIN_ID) return;
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const [users, total, today, pending, sumArr] = await Promise.all([
-    User.countDocuments(), Order.countDocuments(),
-    Order.countDocuments({ createdAt: { $gte: todayStart } }),
-    Order.countDocuments({ status: { $in: ["new","accepted","cooking"] } }),
-    Order.aggregate([{ $match:{ createdAt:{ $gte: todayStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, t:{ $sum:"$total" } } }]),
-  ]);
-  await bot.sendMessage(ADMIN_ID,
-    `📊 *Holland Admin*\n\n👥 Foydalanuvchilar: *${users}*\n📦 Jami: *${total}*\n📅 Bugun: *${today}*\n⏳ Jarayonda: *${pending}*\n💰 Bugungi tushum: *${fmt(sumArr[0]?.t||0)} so'm*\n\n🌐 [Admin panel](${WEBHOOK_URL}/admin)`,
-    { parse_mode: "Markdown" }
-  );
-});
+let _tt;
+function toast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  t.classList.add('show'); clearTimeout(_tt);
+  _tt=setTimeout(()=>t.classList.remove('show'),3000);
+}
 
-bot.onText(/\/hisobot/, async (msg) => {
-  if (msg.chat.id !== ADMIN_ID) return;
-  const month = new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" });
-  await bot.sendMessage(ADMIN_ID, `📊 *Hisobot — Holland Fast Food*\n\nQaysi davrni yuklab olmoqchisiz?`, {
-    parse_mode: "Markdown",
-    reply_markup: { inline_keyboard: [
-      [{ text: "☀️ Bugungi",  callback_data: "report_today"   }],
-      [{ text: "📅 Haftalik", callback_data: "report_weekly"  }],
-      [{ text: `📆 Oylik (${month})`, callback_data: "report_monthly" }],
-    ]},
-  });
-});
+function init(){
+  if(Notification.permission==='default') Notification.requestPermission();
+  loadStats();
+  loadOrders();
+  connectSSE();
+  setInterval(()=>{ loadStats(); loadOrders(); }, 60000);
+}
 
-bot.on("message", async (msg) => {
-  if (msg.text?.startsWith("/") || msg.web_app_data) return;
-  await saveUser(msg);
-  const id = msg.chat.id, text = msg.text || "";
+document.body.insertAdjacentHTML('beforeend', `
+<div id="login-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:#f3f4f6;align-items:center;justify-content:center;">
+  <div style="background:#fff;padding:36px;border-radius:18px;box-shadow:0 4px 30px rgba(0,0,0,.12);width:320px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:6px">🍔 Holland Admin</div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:22px">Parolingizni kiriting</div>
+    <input id="login-pass" type="password" placeholder="Parol..."
+      style="width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;margin-bottom:10px;outline:none;box-sizing:border-box"
+      onkeydown="if(event.key==='Enter') doLogin()" autofocus/>
+    <div id="login-err" style="color:#E8342A;font-size:13px;margin-bottom:10px;min-height:18px"></div>
+    <button onclick="doLogin()"
+      style="width:100%;padding:14px;background:#E8342A;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
+      Kirish
+    </button>
+  </div>
+</div>`);
 
-  if (text === "📋 Menu ko'rish") return bot.sendMessage(id, `🍽 *Menu*\n\nKategoriyani tanlang:`, { parse_mode:"Markdown", reply_markup: menuKb() });
-  if (text === "📦 Buyurtmalarim") {
-    const orders = await Order.find({ userId: id }).sort({ createdAt: -1 }).limit(5);
-    if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", {
-      reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] }
-    });
-    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
-    orders.forEach(o => {
-      txt += `*\\#${escMd(o._id.toString().slice(-6).toUpperCase())}*\n`;
-      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
-      txt += `   📅 ${o.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
-    });
-    return bot.sendMessage(id, txt, { parse_mode: "MarkdownV2", reply_markup: mainKb() });
-  }
-  if (text === "ℹ️ Biz haqimizda") return bot.sendMessage(id,
-    `🏪 *Holland Fast Food*\n\n📍 G'alaba ko'chasi 1a, Namangan\n⏰ 11:00 – 01:00\n📞 \\+998 90 699 95 95\n\n✅ 100% Halol mahsulot`,
-    { parse_mode: "MarkdownV2", reply_markup: mainKb() }
-  );
-  if (text === "📞 Bog'lanish") return bot.sendMessage(id,
-    `📞 *Bog'lanish:*\n\n📱 \\+998 90 699 95 95\n💬 @Holland\\_fries`,
-    { parse_mode: "MarkdownV2", reply_markup: mainKb() }
-  );
-  return bot.sendMessage(id, "Buyurtma berish uchun quyidagi tugmani bosing 👇", {
-    reply_markup: { inline_keyboard: [[{ text: "🍔 Buyurtma berish", web_app: { url: MINI_APP_URL } }]] }
-  });
-});
+const sidebar = document.querySelector('.sidebar');
+if(sidebar){
+  sidebar.insertAdjacentHTML('beforeend',
+    `<div class="nav-item" onclick="doLogout()" style="margin-top:auto;color:rgba(255,255,255,.5)">
+      <span class="nav-icon">🚪</span> Chiqish
+    </div>`);
+}
 
-bot.on("callback_query", async (q) => {
-  const id = q.message.chat.id, data = q.data;
-  await bot.answerCallbackQuery(q.id);
-
-  // ── Hisobot ──
-  if (data.startsWith("report_") && id === ADMIN_ID) {
-    let from = new Date(), title = "", fname = "";
-    if (data === "report_today") {
-      from.setHours(0,0,0,0);
-      title = `Bugungi — ${from.toLocaleDateString("uz-UZ")}`;
-      fname = `Holland_bugun_${from.toISOString().slice(0,10)}.xlsx`;
-    } else if (data === "report_weekly") {
-      from.setDate(from.getDate()-7); from.setHours(0,0,0,0);
-      title = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
-      fname = `Holland_haftalik_${new Date().toISOString().slice(0,10)}.xlsx`;
-    } else if (data === "report_monthly") {
-      from.setDate(1); from.setHours(0,0,0,0);
-      title = `Oylik — ${new Date().toLocaleString("uz-UZ",{month:"long",year:"numeric"})}`;
-      fname = `Holland_oylik_${new Date().toISOString().slice(0,7)}.xlsx`;
-    }
-    const orders    = await Order.find({ createdAt: { $gte: from } }).sort({ createdAt: -1 });
-    const delivered = orders.filter(o => o.status === "delivered");
-    const totalSum  = delivered.reduce((s,o) => s+(o.total||0), 0);
-    if (!orders.length) return bot.sendMessage(ADMIN_ID, "📭 Bu davrda buyurtma topilmadi.");
-    let txt = `📊 *${escMd(title)}*\n\n`;
-    txt += `📦 Jami: *${orders.length}*\n✅ Yetkazilgan: *${delivered.length}*\n`;
-    txt += `💰 Tushum: *${fmt(totalSum)} so'm*`;
-    await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2" });
-    const buf = getReportBuffer(orders, data.replace("report_",""), title);
-    await bot.sendDocument(ADMIN_ID, Buffer.from(buf),
-      { caption: `📎 ${fname}` },
-      { filename: fname, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-    );
-    return;
-  }
-
-  // ── Admin holat ──
-  if (data.startsWith("s_") && id === ADMIN_ID) {
-    const [, oid, status] = data.split("_");
-    if (!/^[a-f0-9]{24}$/i.test(oid) || !Object.hasOwn(STATUS, status)) return;
-    const order = await Order.findByIdAndUpdate(oid, { status }, { new: true });
-    if (!order) return;
-    // ✅ FIX 2g: editMessageReplyMarkup xatoligini handle qilish
-    try {
-      await bot.editMessageReplyMarkup(adminKb(oid), { chat_id: ADMIN_ID, message_id: q.message.message_id });
-    } catch (e) { if (!e.message?.includes("not modified")) console.error(e.message); }
-    await bot.sendMessage(ADMIN_ID, `✅ \\#${escMd(oid.slice(-6).toUpperCase())} → ${STATUS[status]}`, { parse_mode: "MarkdownV2" });
-    sendToUser(order.userId, "order_update", { orderId: oid, status, statusLabel: STATUS[status] });
-    sendToAdmin("order_updated", { orderId: oid, status });
-    try { await bot.sendMessage(order.userId, `🔔 Buyurtma holati:\n${STATUS[status]}\n\nRahmat\\! 🙏`, { parse_mode: "MarkdownV2" }); } catch {}
-    return;
-  }
-
-  if (data === "show_menu") {
-    await bot.editMessageText(`🍽 *Menu*\n\nKategoriyani tanlang:`, { chat_id: id, message_id: q.message.message_id, parse_mode: "Markdown", reply_markup: menuKb() });
-    return;
-  }
-  if (data.startsWith("cat_")) {
-    const catId = data.replace("cat_","");
-    const cat   = CATEGORIES.find(c => c.id === catId);
-    if (!cat) return;
-    await bot.editMessageText(`*${cat.label}*\n${cat.desc}\n\n📦 ${MENU.filter(m=>m.cat===catId).length} ta mahsulot:`,
-      { chat_id:id, message_id:q.message.message_id, parse_mode:"Markdown", reply_markup: catProductsKb(catId,0) });
-    return;
-  }
-  if (data.startsWith("page_")) {
-    const [,catId,pageStr] = data.split("_");
-    try { await bot.editMessageReplyMarkup(catProductsKb(catId, Number(pageStr)), { chat_id:id, message_id:q.message.message_id }); } catch {}
-    return;
-  }
-  if (data.startsWith("prod_")) {
-    const prod = MENU.find(m => m.id === data.replace("prod_",""));
-    if (!prod) return;
-    const cat = CATEGORIES.find(c => c.id === prod.cat);
-    const caption = `*${escMd(prod.name)}*\n\n💰 Narxi: *${fmt(prod.price)} so'm*\n\nBuyurtma berish uchun Mini App ni oching 👇`;
-    const kb = { inline_keyboard: [
-      [{ text:"🛒 Buyurtma berish", web_app:{ url: MINI_APP_URL } }],
-      [{ text:"🔙 Menuga qaytish", callback_data:`cat_${prod.cat}` }],
-    ]};
-    try { await bot.sendPhoto(id, `${IMG_BASE}/${prod.img}`, { caption, parse_mode:"MarkdownV2", reply_markup: kb }); }
-    catch { await bot.sendMessage(id, caption, { parse_mode:"MarkdownV2", reply_markup: kb }); }
-    return;
-  }
-  if (data === "my_orders") {
-    const orders = await Order.find({ userId: id }).sort({ createdAt:-1 }).limit(5);
-    if (!orders.length) return bot.sendMessage(id, "📭 Hali buyurtma berilmagan.", { reply_markup: mainKb() });
-    let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
-    orders.forEach(o => { txt += `*\\#${escMd(o._id.toString().slice(-6).toUpperCase())}*\n└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n\n`; });
-    return bot.sendMessage(id, txt, { parse_mode:"MarkdownV2", reply_markup: mainKb() });
-  }
-});
-
-// ══════════════════════════════════════════
-//  API — Menu (yagona manba)
-// ══════════════════════════════════════════
-app.get("/api/menu", (req, res) => {
-  res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-  res.json({ categories: CATEGORIES, items: MENU });
-});
-
-// ══════════════════════════════════════════
-//  API — Buyurtma yaratish
-// ══════════════════════════════════════════
-app.post("/api/orders", async (req, res) => {
-  // ✅ FIX: Rate limit
-  const ip = req.ip;
-  if (rateLimit(ip, 5)) return res.status(429).json({ success:false, error:"Juda ko'p so'rov. Biroz kuting." });
-
-  try {
-    const { userId: clientUserId, name, phone, address, note, gps, items: clientItems, paymentMethod, source, initData } = req.body;
-
-    // ✅ FIX 1b: Telegram initData ni tekshiramiz — soxtalashtirishning oldini oladi
-    // Tekshirilgan userId mijoz yuborganidan ustun turadi
-    const tgUser  = verifyTelegramInitData(initData);
-    const isValid = !!tgUser;
-    const userId  = isValid ? tgUser.id : 0;   // tasdiqlanmasa 0 (anonim sayt buyurtmasi)
-
-    // Validatsiya
-    if (typeof name !== "string" || typeof phone !== "string" || typeof address !== "string" || !name.trim() || !phone.trim() || !address.trim()) {
-      return res.status(400).json({ success: false, error: "Ism, telefon va manzil to'ldirilishi shart" });
-    }
-    if (!Array.isArray(clientItems) || clientItems.length === 0 || clientItems.length > 50) {
-      return res.status(400).json({ success: false, error: "Savat bo'sh" });
-    }
-    // ✅ Telefon: kamida 9 raqam
-    if (phone.replace(/\D/g, "").length < 9 || phone.replace(/\D/g, "").length > 15) {
-      return res.status(400).json({ success: false, error: "Telefon raqam noto'g'ri" });
-    }
-
-    // ✅ FIX 1a: Narxni serverda hisoblash — mijoz yuborgan narxlarga ISHONMAYMIZ
-    const { items, total, errors } = calcOrder(clientItems);
-    if (errors.length || !items.length) {
-      return res.status(400).json({ success: false, error: "Menyu'da mavjud bo'lmagan mahsulotlar" });
-    }
-
-    // Mini App dan kelgan, lekin tasdiqlanmagan buyurtmani belgilaymiz
-    const realSource = isValid ? "miniapp"
-                     : (["website","bot"].includes(source) ? source : "website");
-
-    if (typeof note !== "undefined" && typeof note !== "string") return res.status(400).json({success:false,error:"Izoh noto‘g‘ri"});
-    const order = await Order.create({
-      userId,
-      name:          name.trim().slice(0, 100),
-      phone:         phone.trim().slice(0, 20),
-      address:       address.trim().slice(0, 300),
-      note:          (note || "").trim().slice(0, 200),
-      gpsLat:        Number.isFinite(Number(gps?.lat)) && Math.abs(Number(gps.lat)) <= 90 ? Number(gps.lat) : null,
-      gpsLng:        Number.isFinite(Number(gps?.lng)) && Math.abs(Number(gps.lng)) <= 180 ? Number(gps.lng) : null,
-      items,   // ← serverdan
-      total,   // ← serverdan
-      paymentMethod: ["cash","card"].includes(paymentMethod) ? paymentMethod : "cash",
-      source:        realSource,
-    });
-
-    broadcastStats();
-
-    if (ADMIN_ID) {
-      const srcLabel = { website:"🌐 Sayt", miniapp:"📱 Mini App", bot:"🤖 Bot" }[order.source] || "📦";
-      const payLabel = order.paymentMethod === "card" ? "💳 Karta" : "💵 Naqd";
-      // ✅ FIX 2d: Markdown escape — mijoz kiritgan matn xavfsiz
-      let txt = `🛎 *Yangi buyurtma \\#${escMd(order._id.toString().slice(-6).toUpperCase())}* ${srcLabel}\n\n`;
-      txt += `👤 ${escMd(order.name)}\n📞 ${escMd(order.phone)}\n📍 ${escMd(order.address)}\n`;
-      txt += `💳 To'lov: ${payLabel}\n`;
-      if (order.gpsLat) txt += `🗺 [Xaritada](https://maps\\.google\\.com/?q=${order.gpsLat},${order.gpsLng})\n`;
-      if (order.note)   txt += `💬 ${escMd(order.note)}\n`;
-      txt += `\n📦 *Tarkibi:*\n`;
-      order.items.forEach(i => { txt += `• ${escMd(i.name)} × ${i.qty} \\= ${fmt(i.price*i.qty)} so'm\n`; });
-      txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
-      try {
-        await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2", reply_markup: adminKb(order._id.toString()) });
-      } catch (notificationError) {
-        console.error("Admin notification failed for order", order._id.toString(), notificationError.message);
-      }
-    }
-
-    if (userId && userId > 0) {
-      try {
-        await bot.sendMessage(userId,
-          `✅ Buyurtmangiz qabul qilindi\\! \\#${escMd(order._id.toString().slice(-6).toUpperCase())}\n\n💰 ${fmt(order.total)} so'm\n\nTez yetkazib beramiz\\! 🚀`,
-          { parse_mode: "MarkdownV2" }
-        );
-      } catch {}
-    }
-
-    if (userId) sendToUser(userId, "new_order", { orderId: order._id.toString(), status:"new", total: order.total, items: order.items });
-    sendToAdmin("new_order", { order: { ...order.toObject(), id: order._id } });
-
-    res.json({ success: true, orderId: order._id, total: order.total });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ success: false, error: "Server xatosi" });
-  }
-});
-
-// ✅ FIX 1c: Faqat tasdiqlangan foydalanuvchi o'z buyurtmalarini ko'radi
-// initData query yoki header orqali kelishi mumkin
-app.get("/api/orders/user/:uid", async (req, res) => {
-  const uid = Number(req.params.uid);
-  if (!uid || uid <= 0) return res.status(400).json([]);
-
-  const initData = req.query.initData || req.headers["x-telegram-init-data"] || "";
-  const tgUser   = verifyTelegramInitData(initData);
-
-  // Tasdiqlanmagan yoki boshqa odamning ID si so'ralsa — rad etiladi
-  if (!tgUser || tgUser.id !== uid) {
-    return res.status(403).json({ error: "Ruxsat yo'q" });
-  }
-
-  try {
-    const orders = await Order.find({ userId: uid }).sort({ createdAt: -1 }).limit(30)
-      .select("-gpsLat -gpsLng -__v");
-    res.json(orders);
-  } catch { res.json([]); }
-});
-
-app.get("/api/stats", (req, res, next) => {
-  if (!checkBearer(req)) return res.status(401).json({error:"Ruxsat yo‘q"});
-  next();
-}, async (req, res) => {
-  try { res.json({ users: await User.countDocuments(), orders: await Order.countDocuments() }); }
-  catch { res.json({ users:0, orders:0 }); }
-});
-
-// ══════════════════════════════════════════
-//  ADMIN API
-// ══════════════════════════════════════════
-app.post("/api/admin/login", (req, res) => {
-  if (rateLimit(`admin:${req.ip}`, 5)) return res.status(429).json({success:false,error:"Ko‘p urinish. Keyinroq urinib ko‘ring."});
-  const { pass } = req.body || {};
-  if (typeof pass === "string" && crypto.timingSafeEqual(crypto.createHash("sha256").update(pass).digest(), crypto.createHash("sha256").update(ADMIN_PASS).digest())) {
-    return res.json({ success: true, token: createSignedToken("admin", ADMIN_SESSION_MS) });
-  }
-  res.status(401).json({ success: false });
-});
-
-app.use("/api/admin", (req, res, next) => {
-  if (checkBearer(req)) return next();
-  res.status(401).json({ error: "Ruxsat yo'q" });
-});
-
-app.get("/api/admin/orders", async (req, res) => {
-  try {
-    const { status, limit = 50, skip = 0 } = req.query;
-    // ✅ FIX: limit cheklash
-    const safeLimit = Math.min(Number(limit) || 50, 100);
-    const filter = status && status !== "all" ? { status } : {};
-    const [orders, total] = await Promise.all([
-      Order.find(filter).sort({ createdAt: -1 }).limit(safeLimit).skip(Number(skip) || 0),
-      Order.countDocuments(filter),
-    ]);
-    res.json({ orders, total });
-  } catch { res.json({ orders:[], total:0 }); }
-});
-
-app.patch("/api/admin/orders/:id", async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!STATUS[status]) return res.status(400).json({ success:false, error:"Noto'g'ri holat" });
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
-    if (!order) return res.status(404).json({ success: false });
-    sendToUser(order.userId, "order_update", { orderId: req.params.id, status, statusLabel: STATUS[status] });
-    sendToAdmin("order_updated", { orderId: req.params.id, status });
-    try { await bot.sendMessage(order.userId, `🔔 Buyurtma holati:\n${STATUS[status]}`, {}); } catch {}
-    res.json({ success: true, order });
-  } catch (e) { res.status(500).json({ success:false, error: e.message }); }
-});
-
-app.get("/api/admin/stats", async (req, res) => {
-  try {
-    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-    const weekStart  = new Date(); weekStart.setDate(weekStart.getDate()-7);
-    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
-
-    const [users, totalOrders, todayOrders, weekOrders, monthOrders, pending,
-           todaySumArr, weekSumArr, monthSumArr, statusCounts, daily] = await Promise.all([
-      User.countDocuments(),
-      Order.countDocuments(),
-      Order.countDocuments({ createdAt:{ $gte: todayStart } }),
-      Order.countDocuments({ createdAt:{ $gte: weekStart  } }),
-      Order.countDocuments({ createdAt:{ $gte: monthStart } }),
-      Order.countDocuments({ status:{ $in:["new","accepted","cooking"] } }),
-      Order.aggregate([{ $match:{ createdAt:{ $gte:todayStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
-      Order.aggregate([{ $match:{ createdAt:{ $gte:weekStart  }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
-      Order.aggregate([{ $match:{ createdAt:{ $gte:monthStart }, status:{ $ne:"cancelled" } } }, { $group:{ _id:null, total:{ $sum:"$total" } } }]),
-      Order.aggregate([{ $group:{ _id:"$status", count:{ $sum:1 } } }]),
-      Order.aggregate([
-        { $match:{ createdAt:{ $gte: weekStart } } },
-        { $group:{ _id:{ $dateToString:{ format:"%Y-%m-%d", date:"$createdAt" } }, count:{ $sum:1 }, total:{ $sum:"$total" } } },
-        { $sort:{ _id:1 } }
-      ]),
-    ]);
-
-    res.json({
-      users, totalOrders, todayOrders, weekOrders, monthOrders, pending,
-      todaySum: todaySumArr[0]?.total||0,
-      weekSum:  weekSumArr[0]?.total||0,
-      monthSum: monthSumArr[0]?.total||0,
-      statusCounts, daily,
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Excel hisobotlar ────────────────────────────────────────
-app.get("/api/admin/report/weekly", async (req, res) => {
-  try {
-    const from = new Date(); from.setDate(from.getDate()-7); from.setHours(0,0,0,0);
-    const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
-    const title  = `Haftalik (${from.toLocaleDateString("uz-UZ")} — ${new Date().toLocaleDateString("uz-UZ")})`;
-    const buf    = getReportBuffer(orders, "weekly", title);
-    const fname  = `Holland_haftalik_${new Date().toISOString().slice(0,10)}.xlsx`;
-    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch(e){ res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/admin/report/monthly", async (req, res) => {
-  try {
-    const from = new Date(); from.setDate(1); from.setHours(0,0,0,0);
-    const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
-    const title  = `Oylik — ${new Date().toLocaleString("uz-UZ",{month:"long",year:"numeric"})}`;
-    const buf    = getReportBuffer(orders, "monthly", title);
-    const fname  = `Holland_oylik_${new Date().toISOString().slice(0,7)}.xlsx`;
-    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch(e){ res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/admin/report/today", async (req, res) => {
-  try {
-    const from = new Date(); from.setHours(0,0,0,0);
-    const orders = await Order.find({ createdAt:{ $gte:from } }).sort({ createdAt:-1 });
-    const title  = `Bugungi — ${from.toLocaleDateString("uz-UZ")}`;
-    const buf    = getReportBuffer(orders, "today", title);
-    const fname  = `Holland_bugun_${from.toISOString().slice(0,10)}.xlsx`;
-    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch(e){ res.status(500).json({ error:e.message }); }
-});
-
-app.get("/api/admin/report/custom", async (req, res) => {
-  try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now()-30*86400000);
-    const to   = req.query.to   ? new Date(req.query.to)   : new Date();
-    from.setHours(0,0,0,0); to.setHours(23,59,59,999);
-    const orders = await Order.find({ createdAt:{ $gte:from, $lte:to } }).sort({ createdAt:-1 });
-    const title  = `${from.toLocaleDateString("uz-UZ")} — ${to.toLocaleDateString("uz-UZ")}`;
-    const buf    = getReportBuffer(orders, "custom", title);
-    const fname  = `Holland_hisobot_${from.toISOString().slice(0,10)}_${to.toISOString().slice(0,10)}.xlsx`;
-    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition",`attachment; filename="${fname}"`);
-    res.send(buf);
-  } catch(e){ res.status(500).json({ error:e.message }); }
-});
-
-app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
-app.get("/health", (req, res) => res.json({ok: true, database: mongoose.connection.readyState === 1 ? "connected" : "unavailable"}));
-app.get("/",      (req, res) => res.json({ ok:true, service:"Holland API" }));
-
-app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));
+if(!TOKEN){
+  showLogin();
+} else {
+  fetch(`${API}/api/admin/stats`, { headers: getHeaders() }).then(r=>{
+    if(!r.ok){ doLogout(); }
+    else { hideLogin(); init(); }
+  }).catch(()=>{ showLogin('Server bilan bog‘lanib bo‘lmadi'); });
+}
+</script>
+</body>
+</html>
