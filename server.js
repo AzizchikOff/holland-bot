@@ -403,18 +403,7 @@ if (isProduction) {
     createTelegramWebhookHandler(bot, process.env.TELEGRAM_WEBHOOK_SECRET)
   );
 
-  // Vaqtinchalik: eski webhook migratsiya tugaguncha ishlaydi.
-  app.post(`/bot${BOT_TOKEN}`, async (req, res) => {
-    try {
-      await bot.handleUpdate(req.body);
-      res.sendStatus(200);
-    } catch (err) {
-      console.error("Legacy webhook error:", err);
-      res.sendStatus(500);
-    }
-  });
-
-  console.log("✅ Webhook migratsiya rejimida");
+  console.log("✅ Telegram webhook faol");
 }
 
 // ══════════════════════════════════════════
