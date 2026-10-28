@@ -2,7 +2,10 @@ require("dotenv").config();
 const express     = require("express");
 const cors        = require("cors");
 const mongoose    = require("mongoose");
-const TelegramBot = require("node-telegram-bot-api");
+const { createTelegramAdapter } = require("./telegram-adapter");
+const { createOrderCalculator } = require("./order-calculator");
+const { canRunAdminCallback } = require("./callback-security");
+const { createTelegramWebhookHandler } = require("./telegram-webhook");
 const path        = require("path");
 const crypto      = require("crypto");
 const { getReportBuffer } = require("./reports");
@@ -26,9 +29,7 @@ if (!process.env.MONGO_URI) { console.error("❌ MONGO_URI env o'zgaruvchisi yo'
 if (!ADMIN_ID) { console.warn("⚠️ ADMIN_ID yo'q — buyurtmalar hech kimga yuborilmaydi!"); }
 
 const isProduction = !!WEBHOOK_URL;
-const bot = isProduction
-  ? new TelegramBot(BOT_TOKEN, { webHook: { port: false } })
-  : new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = createTelegramAdapter(BOT_TOKEN);
 
 // ✅ FIX: CORS faqat ruxsat etilgan domenlar
 app.use(cors({
@@ -151,26 +152,8 @@ const MENU = [
   { id:"38", cat:"drink",  name:"Cappy Pulpy 0.5L",          price:8000,   img:"cappy.jpg"            },
 ];
 
-// ✅ FIX 1a: Narxni serverda hisoblash
-const MENU_MAP = Object.fromEntries(MENU.map(m => [m.id, m]));
-
-function calcOrder(clientItems) {
-  const errors = [];
-  const items  = [];
-  let total    = 0;
-
-  for (const it of clientItems) {
-    const menuItem = MENU_MAP[String(it.id || it.productId)];
-    if (!menuItem) { errors.push(`Noma'lum mahsulot: ${it.id}`); continue; }
-    const qty = Number(it.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 20) { errors.push("Mahsulot miqdori noto'g'ri"); continue; }
-    const lineTotal = menuItem.price * qty;
-    total += lineTotal;
-    items.push({ id: menuItem.id, name: menuItem.name, price: menuItem.price, qty });
-  }
-
-  return { items, total, errors };
-}
+// Narxlar faqat serverdagi MENU asosida hisoblanadi
+const calcOrder = createOrderCalculator(MENU);
 
 // ✅ FIX 2d: Markdown escape
 function escMd(text) {
@@ -415,15 +398,29 @@ async function saveUser(msg) {
 //  WEBHOOK
 // ══════════════════════════════════════════
 if (isProduction) {
-  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
-  app.post(`/bot${BOT_TOKEN}`, (req, res) => { bot.processUpdate(req.body); res.sendStatus(200); });
-  console.log("✅ Webhook rejimida");
+  app.post(
+    "/telegram/webhook",
+    createTelegramWebhookHandler(bot, process.env.TELEGRAM_WEBHOOK_SECRET)
+  );
+
+  // Vaqtinchalik: eski webhook migratsiya tugaguncha ishlaydi.
+  app.post(`/bot${BOT_TOKEN}`, async (req, res) => {
+    try {
+      await bot.handleUpdate(req.body);
+      res.sendStatus(200);
+    } catch (err) {
+      console.error("Legacy webhook error:", err);
+      res.sendStatus(500);
+    }
+  });
+
+  console.log("✅ Webhook migratsiya rejimida");
 }
 
 // ══════════════════════════════════════════
 //  BOT HANDLERS
 // ══════════════════════════════════════════
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/^\/start(?:@\w+)?(?:\s|$)/, async (msg) => {
   const id = msg.chat.id, name = msg.chat.first_name || "Mehmon";
   await saveUser(msg);
   const [userCount, lastOrder] = await Promise.all([
@@ -437,7 +434,7 @@ bot.onText(/\/start/, async (msg) => {
   text += `└ 👥 Mijozlar: *${userCount} ta*\n\n`;
   if (lastOrder) {
     text += `📦 *So'nggi buyurtma:*\n`;
-    text += `\\#${escMd(lastOrder._id.toString().slice(-6).toUpperCase())} — ${STATUS[lastOrder.status]}\n\n`;
+    text += `\\#${escMd(lastOrder._id.toString().slice(-6).toUpperCase())} — ${escMd(STATUS[lastOrder.status] || "Noma’lum")}\n\n`;
   }
   text += `👇 Quyidagi tugmani bosib buyurtma bering\\!`;
   await bot.sendMessage(id, text, {
@@ -453,7 +450,7 @@ bot.onText(/\/start/, async (msg) => {
   await bot.sendMessage(id, "Pastdagi tugmalardan ham foydalanishingiz mumkin 👇", { reply_markup: mainKb() });
 });
 
-bot.onText(/\/admin/, async (msg) => {
+bot.onText(/^\/admin(?:@\w+)?(?:\s|$)/, async (msg) => {
   if (msg.chat.id !== ADMIN_ID) return;
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const [users, total, today, pending, sumArr] = await Promise.all([
@@ -468,7 +465,7 @@ bot.onText(/\/admin/, async (msg) => {
   );
 });
 
-bot.onText(/\/hisobot/, async (msg) => {
+bot.onText(/^\/hisobot(?:@\w+)?(?:\s|$)/, async (msg) => {
   if (msg.chat.id !== ADMIN_ID) return;
   const month = new Date().toLocaleString("uz-UZ", { month: "long", year: "numeric" });
   await bot.sendMessage(ADMIN_ID, `📊 *Hisobot — Holland Fast Food*\n\nQaysi davrni yuklab olmoqchisiz?`, {
@@ -495,8 +492,8 @@ bot.on("message", async (msg) => {
     let txt = "📦 *So'nggi buyurtmalaringiz:*\n\n";
     orders.forEach(o => {
       txt += `*\\#${escMd(o._id.toString().slice(-6).toUpperCase())}*\n`;
-      txt += `└ ${STATUS[o.status]} — ${fmt(o.total)} so'm\n`;
-      txt += `   📅 ${o.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
+      txt += `└ ${escMd(STATUS[o.status] || "Noma’lum")} — ${escMd(fmt(o.total))} so'm\n`;
+      txt += `   📅 ${escMd(o.createdAt.toLocaleDateString("uz-UZ"))}\n\n`;
     });
     return bot.sendMessage(id, txt, { parse_mode: "MarkdownV2", reply_markup: mainKb() });
   }
@@ -514,11 +511,21 @@ bot.on("message", async (msg) => {
 });
 
 bot.on("callback_query", async (q) => {
-  const id = q.message.chat.id, data = q.data;
+  const id = q.message?.chat?.id ?? q.from?.id;
+  const actorId = q.from?.id;
+  const data = q.data || "";
   await bot.answerCallbackQuery(q.id);
 
+  // Admin buyruqlarini faqat haqiqiy admin bajara oladi
+  if (data.startsWith("report_") || data.startsWith("s_")) {
+    if (!canRunAdminCallback(q, ADMIN_ID)) return;
+  }
+
+  // Oddiy menyu callbacklari uchun xabar mavjud bo'lishi shart
+  if (!q.message) return;
+
   // ── Hisobot ──
-  if (data.startsWith("report_") && id === ADMIN_ID) {
+  if (data.startsWith("report_") && actorId === ADMIN_ID) {
     let from = new Date(), title = "", fname = "";
     if (data === "report_today") {
       from.setHours(0,0,0,0);
@@ -550,7 +557,7 @@ bot.on("callback_query", async (q) => {
   }
 
   // ── Admin holat ──
-  if (data.startsWith("s_") && id === ADMIN_ID) {
+  if (data.startsWith("s_") && actorId === ADMIN_ID) {
     const [, oid, status] = data.split("_");
     if (!/^[a-f0-9]{24}$/i.test(oid) || !Object.hasOwn(STATUS, status)) return;
     const order = await Order.findByIdAndUpdate(oid, { status }, { new: true });
@@ -559,10 +566,10 @@ bot.on("callback_query", async (q) => {
     try {
       await bot.editMessageReplyMarkup(adminKb(oid), { chat_id: ADMIN_ID, message_id: q.message.message_id });
     } catch (e) { if (!e.message?.includes("not modified")) console.error(e.message); }
-    await bot.sendMessage(ADMIN_ID, `✅ \\#${escMd(oid.slice(-6).toUpperCase())} → ${STATUS[status]}`, { parse_mode: "MarkdownV2" });
+    await bot.sendMessage(ADMIN_ID, `✅ \\#${escMd(oid.slice(-6).toUpperCase())} → ${escMd(STATUS[status])}`, { parse_mode: "MarkdownV2" });
     sendToUser(order.userId, "order_update", { orderId: oid, status, statusLabel: STATUS[status] });
     sendToAdmin("order_updated", { orderId: oid, status });
-    try { await bot.sendMessage(order.userId, `🔔 Buyurtma holati:\n${STATUS[status]}\n\nRahmat\\! 🙏`, { parse_mode: "MarkdownV2" }); } catch {}
+    try { await bot.sendMessage(order.userId, `🔔 Buyurtma holati:\n${escMd(STATUS[status])}\n\nRahmat\\! 🙏`, { parse_mode: "MarkdownV2" }); } catch {}
     return;
   }
 
@@ -683,11 +690,11 @@ app.post("/api/orders", async (req, res) => {
       let txt = `🛎 *Yangi buyurtma \\#${escMd(order._id.toString().slice(-6).toUpperCase())}* ${srcLabel}\n\n`;
       txt += `👤 ${escMd(order.name)}\n📞 ${escMd(order.phone)}\n📍 ${escMd(order.address)}\n`;
       txt += `💳 To'lov: ${payLabel}\n`;
-      if (order.gpsLat) txt += `🗺 [Xaritada](https://maps\\.google\\.com/?q=${order.gpsLat},${order.gpsLng})\n`;
+      if (order.gpsLat != null && order.gpsLng != null) txt += `🗺 [Xaritada](https://www.google.com/maps?q=${order.gpsLat},${order.gpsLng})\n`;
       if (order.note)   txt += `💬 ${escMd(order.note)}\n`;
       txt += `\n📦 *Tarkibi:*\n`;
-      order.items.forEach(i => { txt += `• ${escMd(i.name)} × ${i.qty} \\= ${fmt(i.price*i.qty)} so'm\n`; });
-      txt += `\n💰 *Jami: ${fmt(order.total)} so'm*`;
+      order.items.forEach(i => { txt += `• ${escMd(i.name)} × ${escMd(i.qty)} \\= ${escMd(fmt(i.price*i.qty))} so'm\n`; });
+      txt += `\n💰 *Jami: ${escMd(fmt(order.total))} so'm*`;
       try {
         await bot.sendMessage(ADMIN_ID, txt, { parse_mode: "MarkdownV2", reply_markup: adminKb(order._id.toString()) });
       } catch (notificationError) {
@@ -698,7 +705,7 @@ app.post("/api/orders", async (req, res) => {
     if (userId && userId > 0) {
       try {
         await bot.sendMessage(userId,
-          `✅ Buyurtmangiz qabul qilindi\\! \\#${escMd(order._id.toString().slice(-6).toUpperCase())}\n\n💰 ${fmt(order.total)} so'm\n\nTez yetkazib beramiz\\! 🚀`,
+          `✅ Buyurtmangiz qabul qilindi\\! \\#${escMd(order._id.toString().slice(-6).toUpperCase())}\n\n💰 ${escMd(fmt(order.total))} so'm\n\nTez yetkazib beramiz\\! 🚀`,
           { parse_mode: "MarkdownV2" }
         );
       } catch {}
@@ -882,3 +889,10 @@ app.get("/health", (req, res) => res.json({ok: true, database: mongoose.connecti
 app.get("/",      (req, res) => res.json({ ok:true, service:"Holland API" }));
 
 app.listen(PORT, () => console.log(`✅ Holland API: http://localhost:${PORT}`));
+
+if (!isProduction && process.env.ENABLE_BOT_POLLING === "true") {
+  bot.startPolling().catch(err => {
+    console.error("Telegram polling error:", err);
+    process.exitCode = 1;
+  });
+}
