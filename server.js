@@ -35,6 +35,7 @@ const bot = createTelegramAdapter(BOT_TOKEN);
 app.use(cors({
   origin: [
     "https://holland-namangan.netlify.app",
+    "https://deploy-preview-7--holland-namangan.netlify.app",
     "https://holland-bot.onrender.com",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -88,6 +89,8 @@ const UserSchema = new mongoose.Schema({
 const User = mongoose.model("User", UserSchema);
 
 const OrderSchema = new mongoose.Schema({
+  requestId:     { type: String, default: undefined },
+  requestHash:   { type: String, default: undefined },
   userId:        Number,
   name:          String,
   phone:         String,
@@ -103,6 +106,11 @@ const OrderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ✅ FIX: Indekslar
+// Eski buyurtmalarda requestId yo'q: partial index ularni chetlab o'tadi.
+OrderSchema.index(
+  { requestId: 1 },
+  { unique: true, partialFilterExpression: { requestId: { $type: "string" } } }
+);
 OrderSchema.index({ userId: 1 });
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ status: 1 });
@@ -617,12 +625,10 @@ app.get("/api/menu", (req, res) => {
 //  API — Buyurtma yaratish
 // ══════════════════════════════════════════
 app.post("/api/orders", async (req, res) => {
-  // ✅ FIX: Rate limit
   const ip = req.ip;
-  if (rateLimit(ip, 5)) return res.status(429).json({ success:false, error:"Juda ko'p so'rov. Biroz kuting." });
 
   try {
-    const { userId: clientUserId, name, phone, address, note, gps, items: clientItems, paymentMethod, source, initData } = req.body;
+    const { userId: clientUserId, name, phone, address, note, gps, items: clientItems, paymentMethod, source, initData, requestId } = req.body;
 
     // ✅ FIX 1b: Telegram initData ni tekshiramiz — soxtalashtirishning oldini oladi
     // Tekshirilgan userId mijoz yuborganidan ustun turadi
@@ -650,29 +656,125 @@ app.post("/api/orders", async (req, res) => {
       return res.status(400).json({ success: false, error: "Telefon raqam noto'g'ri" });
     }
 
-    // ✅ FIX 1a: Narxni serverda hisoblash — mijoz yuborgan narxlarga ISHONMAYMIZ
-    const { items, total, errors } = calcOrder(clientItems);
-    if (errors.length || !items.length) {
-      return res.status(400).json({ success: false, error: "Menyu'da mavjud bo'lmagan mahsulotlar" });
-    }
-
-    // Mini App dan kelgan, lekin tasdiqlanmagan buyurtmani belgilaymiz
+    // Buyurtma manbasi
     const realSource = isValid ? "miniapp"
                      : (["website","bot"].includes(source) ? source : "website");
 
-    const order = await Order.create({
+    // requestId formatini tekshirish
+    if (requestId !== undefined &&
+        (typeof requestId !== "string" ||
+         !/^[a-zA-Z0-9_-]{16,100}$/.test(requestId))) {
+      return res.status(400).json({
+        success: false,
+        error: "requestId noto'g'ri",
+      });
+    }
+
+    // Fingerprint: faqat mijoz yuborgan ma'lumotlar.
+    // Joriy katalog narxlari bunga ta'sir qilmaydi.
+    const normalizedRequest = {
+      userId,
+      name: name.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      note: (note || "").trim(),
+      gpsLat: gps?.lat != null && gps.lat !== "" &&
+        Number.isFinite(Number(gps.lat)) &&
+        Math.abs(Number(gps.lat)) <= 90 ? Number(gps.lat) : null,
+      gpsLng: gps?.lng != null && gps.lng !== "" &&
+        Number.isFinite(Number(gps.lng)) &&
+        Math.abs(Number(gps.lng)) <= 180 ? Number(gps.lng) : null,
+      items: clientItems.map(item => ({
+        id: String(item?.id ?? ""),
+        qty: item?.qty,
+      })),
+      paymentMethod: ["cash","card"].includes(paymentMethod)
+        ? paymentMethod : "cash",
+      source: realSource,
+    };
+
+    const requestHash = requestId
+      ? crypto.createHash("sha256")
+          .update(JSON.stringify(normalizedRequest))
+          .digest("hex")
+      : undefined;
+
+    // Avval mavjud buyurtmani tekshiramiz.
+    // Bu yerda menyuni qayta hisoblash shart emas.
+    // requestId orqali cheksiz tekshiruvlarning oldini olish
+    if (requestId && rateLimit(`order-lookup:${ip}`, 30)) {
+      return res.status(429).json({
+        success: false,
+        error: "Juda ko'p so'rov. Biroz kuting.",
+      });
+    }
+
+    const existingOrder = requestId
+      ? await Order.findOne({ requestId })
+      : null;
+
+    if (existingOrder) {
+      if (existingOrder.requestHash !== requestHash) {
+        return res.status(409).json({
+          success: false,
+          error: "Bu requestId boshqa buyurtmaga tegishli",
+        });
+      }
+
+      return res.json({ success: true, duplicate: true });
+    }
+
+    // Mavjud buyurtma qayta tekshirilgandan keyingina
+    // yangi buyurtmalar uchun IP rate limiter ishlaydi.
+    if (rateLimit(ip, 5)) {
+      return res.status(429).json({
+        success: false,
+        error: "Juda ko'p so'rov. Biroz kuting.",
+      });
+    }
+
+    // Faqat yangi buyurtma uchun server narxlarni hisoblaydi.
+    const { items, total, errors } = calcOrder(clientItems);
+
+    if (errors.length || !items.length) {
+      return res.status(400).json({
+        success: false,
+        error: "Menyu'da mavjud bo'lmagan mahsulotlar",
+      });
+    }
+
+    let order;
+    try {
+      order = await Order.create({
+      ...(requestId ? { requestId, requestHash } : {}),
       userId,
       name:          name.trim().slice(0, 100),
       phone:         phone.trim().slice(0, 20),
       address:       address.trim().slice(0, 300),
       note:          (note || "").trim().slice(0, 200),
-      gpsLat:        Number.isFinite(Number(gps?.lat)) && Math.abs(Number(gps.lat)) <= 90 ? Number(gps.lat) : null,
-      gpsLng:        Number.isFinite(Number(gps?.lng)) && Math.abs(Number(gps.lng)) <= 180 ? Number(gps.lng) : null,
+      gpsLat:        normalizedRequest.gpsLat,
+      gpsLng:        normalizedRequest.gpsLng,
       items,   // ← serverdan
       total,   // ← serverdan
       paymentMethod: ["cash","card"].includes(paymentMethod) ? paymentMethod : "cash",
       source:        realSource,
     });
+
+    } catch (createError) {
+      if (createError.code === 11000 && requestId) {
+        const previous = await Order.findOne({ requestId });
+        if (previous) {
+          if (previous.requestHash !== requestHash) {
+            return res.status(409).json({
+              success: false,
+              error: "Bu requestId boshqa buyurtmaga tegishli",
+            });
+          }
+          return res.json({ success: true, duplicate: true });
+        }
+      }
+      throw createError;
+    }
 
     broadcastStats();
 
