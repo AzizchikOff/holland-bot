@@ -35,6 +35,7 @@ const bot = createTelegramAdapter(BOT_TOKEN);
 app.use(cors({
   origin: [
     "https://holland-namangan.netlify.app",
+    "https://deploy-preview-7--holland-namangan.netlify.app",
     "https://holland-bot.onrender.com",
     ...(isProduction ? [] : ["http://localhost:5173", "http://localhost:3000"]),
   ],
